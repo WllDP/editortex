@@ -5,11 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "prepare": "husky",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "set CARGO_TARGET_DIR=%LOCALAPPDATA%\\EditorTex\\cargo-target&& tauri dev",
     "tauri:build": "set CARGO_TARGET_DIR=%LOCALAPPDATA%\\EditorTex\\cargo-target&& tauri build"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,md,yml,yaml}": "prettier --write"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -20,6 +32,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@tauri-apps/api": "^2.8.0",
     "clsx": "^2.1.1",
+    "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.40.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.468.0",
@@ -31,15 +44,24 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.8.4",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "eslint": "^10.4.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
     "postcss": "^8.4.49",
+    "prettier": "^3.8.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "typescript-eslint": "^8.60.1",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.8"
   }
 }

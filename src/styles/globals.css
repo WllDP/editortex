@@ -43,8 +43,15 @@ body {
     linear-gradient(135deg, #070716 0%, #120b35 44%, #081226 100%);
   color: hsl(var(--foreground));
   font-family:
-    Inter, "Space Grotesk", "SF Pro Display", "Segoe UI", ui-sans-serif,
-    system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    Inter,
+    "Space Grotesk",
+    "SF Pro Display",
+    "Segoe UI",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
 }
 
 body::before {
@@ -124,7 +131,39 @@ textarea {
   }
 
   .focus-glow {
-    box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.45), 0 0 14px rgba(34, 211, 238, 0.12);
+    box-shadow:
+      0 0 0 1px rgba(34, 211, 238, 0.45),
+      0 0 14px rgba(34, 211, 238, 0.12);
+  }
+
+  .dynamic-editor-toggle-active {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background: rgba(37, 99, 235, 0.88) !important;
+  }
+
+  .dynamic-editor-toggle-active::before {
+    pointer-events: none;
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: repeating-linear-gradient(
+      90deg,
+      rgba(37, 99, 235, 0.9) 0%,
+      rgba(34, 211, 238, 0.3) 12.5%,
+      rgba(37, 99, 235, 0.9) 25%,
+      rgba(255, 77, 157, 0.22) 37.5%,
+      rgba(37, 99, 235, 0.9) 50%
+    );
+    background-size: 200% 100%;
+    animation: dynamic-editor-wave 7.5s linear infinite;
+  }
+
+  .dynamic-editor-toggle-active > * {
+    position: relative;
+    z-index: 1;
   }
 
   .tex-source-monaco .monaco-editor,
@@ -144,5 +183,21 @@ textarea {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@keyframes dynamic-editor-wave {
+  from {
+    background-position: 0% 50%;
+  }
+
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-editor-toggle-active::before {
+    animation: none;
   }
 }

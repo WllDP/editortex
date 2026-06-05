@@ -15,8 +15,8 @@ import { Menu } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
-import { EditorCanvas } from "@/components/editor/EditorCanvas";
-import { PreviewPanel } from "@/components/preview/PreviewPanel";
+import { EditorCanvas } from "@/features/editor/components/EditorCanvas";
+import { PreviewPanel } from "@/features/preview/components/PreviewPanel";
 import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/store/editorStore";
 import { cn } from "@/utils/cn";
@@ -165,7 +165,10 @@ export function AppShell() {
             type="button"
             size="icon"
             variant="outline"
-            className={cn("fixed left-8 top-8 z-40 transition-opacity duration-200", isSidebarOpen && "pointer-events-none opacity-0")}
+            className={cn(
+              "fixed left-8 top-8 z-40 transition-opacity duration-200",
+              isSidebarOpen && "pointer-events-none opacity-0",
+            )}
             onClick={() => setIsSidebarOpen(true)}
           >
             <Menu className="h-5 w-5" />
@@ -232,8 +235,12 @@ export function AppShell() {
               transition={sharedBlockTransition}
               className="flex min-h-12 w-[min(520px,calc(100vw-48px))] items-center gap-3 rounded-2xl border border-[#22D3EE]/45 bg-[#111936]/92 px-3 py-2.5 text-left text-sm font-semibold leading-none text-white shadow-[0_22px_58px_rgba(34,211,238,0.22)] backdrop-blur-2xl"
             >
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#22D3EE]/15 text-[#22D3EE]">::</span>
-              <span className="min-w-0 flex-1 truncate">{draggedDocumentDefinition?.name ?? draggedDocumentBlock.variableName}</span>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#22D3EE]/15 text-[#22D3EE]">
+                ::
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {draggedDocumentDefinition?.name ?? draggedDocumentBlock.variableName}
+              </span>
               <span className="shrink-0 rounded-full border border-white/12 bg-white/[0.07] px-2 py-1 text-xs font-semibold leading-none text-[#D1D5DB]">
                 {draggedDocumentDefinition?.fields.length ?? 0}
               </span>

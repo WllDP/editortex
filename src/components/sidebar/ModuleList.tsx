@@ -53,7 +53,9 @@ function DraggableModule({ block }: { block: BlockDefinition }) {
     >
       <GripVertical className="h-4 w-4" />
       <span className="min-w-0 flex-1 truncate">{block.name}</span>
-      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-[#FF4D9D]/35 bg-[#FF4D9D]/75 px-2 text-xs font-semibold leading-none text-white">{block.fields.length}</span>
+      <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-[#FF4D9D]/35 bg-[#FF4D9D]/75 px-2 text-xs font-semibold leading-none text-white">
+        {block.fields.length}
+      </span>
     </button>
   );
 }

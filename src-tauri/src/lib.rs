@@ -1,13 +1,13 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
     time::Instant,
 };
 use tauri::{AppHandle, Manager};
 use thiserror::Error;
-use base64::{engine::general_purpose, Engine as _};
 
 #[derive(Debug, Error)]
 enum CommandError {
@@ -32,12 +32,19 @@ impl Serialize for CommandError {
 struct ExportPayload {
     document: serde_json::Value,
     tex: String,
-    exportedAt: String,
+    #[serde(rename = "exportedAt")]
+    exported_at: String,
 }
 
 #[derive(Debug, Serialize)]
 struct PdfCompileResult {
     pdf_path: Option<String>,
+    diagnostics: Vec<String>,
+}
+
+struct ResolvedLatexProgram {
+    command: PathBuf,
+    path_dir: Option<PathBuf>,
     diagnostics: Vec<String>,
 }
 
@@ -118,7 +125,10 @@ fn compile_pdf_preview(
             let diagnostics = vec![
                 "PDF compilado com toolchain LaTeX local.".to_string(),
                 format!("Arquivo gerado: {}", pdf_path.to_string_lossy()),
-                format!("Tempo total backend Tauri: {:.1}ms.", started_at.elapsed().as_secs_f64() * 1000.0),
+                format!(
+                    "Tempo total backend Tauri: {:.1}ms.",
+                    started_at.elapsed().as_secs_f64() * 1000.0
+                ),
             ];
 
             PdfCompileResult {
@@ -154,18 +164,22 @@ fn compile_pdf_with_local_toolchain(
 ) -> Result<PathBuf, Vec<String>> {
     let total_started_at = Instant::now();
     let preview_dir = match app.path().app_cache_dir() {
-        Ok(dir) => dir
-            .join("preview-cache")
-            .join(format!(
-                "{}-{}",
-                sanitize_cache_key(project_key.unwrap_or("standalone")),
-                sanitize_cache_key(compile_mode)
-            )),
-        Err(_) => return Err(vec!["Diretorio de cache da aplicacao indisponivel.".to_string()]),
+        Ok(dir) => dir.join("preview-cache").join(format!(
+            "{}-{}",
+            sanitize_cache_key(project_key.unwrap_or("standalone")),
+            sanitize_cache_key(compile_mode)
+        )),
+        Err(_) => {
+            return Err(vec![
+                "Diretorio de cache da aplicacao indisponivel.".to_string()
+            ])
+        }
     };
 
     if let Err(error) = fs::create_dir_all(&preview_dir) {
-        return Err(vec![format!("Falha ao criar diretorio de preview: {error}")]);
+        return Err(vec![format!(
+            "Falha ao criar diretorio de preview: {error}"
+        )]);
     }
 
     let main_relative_path = main_tex_path
@@ -180,7 +194,9 @@ fn compile_pdf_with_local_toolchain(
     let tex_path = preview_dir.join(&compile_relative_path);
     if let Some(parent) = tex_path.parent() {
         if let Err(error) = fs::create_dir_all(parent) {
-            return Err(vec![format!("Falha ao criar diretorio do TEX principal: {error}")]);
+            return Err(vec![format!(
+                "Falha ao criar diretorio do TEX principal: {error}"
+            )]);
         }
     }
     let write_started_at = Instant::now();
@@ -193,7 +209,10 @@ fn compile_pdf_with_local_toolchain(
         "Tempo escrita temporarios: {:.1}ms.",
         write_started_at.elapsed().as_secs_f64() * 1000.0
     ));
-    diagnostics.push(format!("Cache de compilacao: {}", preview_dir.to_string_lossy()));
+    diagnostics.push(format!(
+        "Cache de compilacao: {}",
+        preview_dir.to_string_lossy()
+    ));
     if compile_mode == "preview" {
         diagnostics.push("Preview rapido: compilador direto, duas passadas para atualizar sumario, com flag \\fastpreviewtrue.".to_string());
     }
@@ -206,7 +225,7 @@ fn compile_pdf_with_local_toolchain(
     remove_generated_latex_artifacts(compile_dir, tex_path.file_stem());
 
     let compile_started_at = Instant::now();
-    let attempts = create_latex_attempts(tex, compile_dir, &compile_tex_path, compile_mode);
+    let attempts = create_latex_attempts(app, tex, compile_dir, &compile_tex_path, compile_mode);
     for attempt in attempts {
         match attempt {
             CompileAttempt::Success(message) => {
@@ -230,7 +249,7 @@ fn compile_pdf_with_local_toolchain(
     }
 
     diagnostics.push(
-        "Nenhum compilador local conseguiu gerar PDF. Instale tectonic, latexmk ou pdflatex no PATH.".to_string(),
+        "Nenhum compilador local conseguiu gerar PDF. Configure EDITORTEX_LATEX_BIN/EDITORTEX_LATEX_HOME, inclua um runtime em latex-runtime/bin nos resources do app ou instale latexmk/pdflatex no PATH.".to_string(),
     );
     Err(diagnostics)
 }
@@ -262,9 +281,10 @@ fn find_pdf_by_stem(dir: &Path, file_stem: &std::ffi::OsStr) -> Option<PathBuf> 
             continue;
         }
 
-        let is_matching_pdf =
-            path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
-                && path.file_stem().is_some_and(|stem| stem == file_stem);
+        let is_matching_pdf = path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+            && path.file_stem().is_some_and(|stem| stem == file_stem);
         if is_matching_pdf {
             return Some(path);
         }
@@ -279,7 +299,8 @@ fn write_project_files(
     project_files: Vec<PreviewProjectFile>,
 ) -> Vec<String> {
     let mut diagnostics = Vec::new();
-    let normalized_main_path = main_tex_path.map(|path| normalize_project_relative_path(path, Path::new("")));
+    let normalized_main_path =
+        main_tex_path.map(|path| normalize_project_relative_path(path, Path::new("")));
 
     for file in project_files {
         if file.kind == "pdf" || file.kind == "auxiliary" {
@@ -287,7 +308,10 @@ fn write_project_files(
         }
 
         let relative_path = normalize_project_relative_path(&file.path, Path::new(""));
-        if normalized_main_path.as_ref().is_some_and(|main_path| main_path == &relative_path) {
+        if normalized_main_path
+            .as_ref()
+            .is_some_and(|main_path| main_path == &relative_path)
+        {
             continue;
         }
         if relative_path.as_os_str().is_empty() {
@@ -296,13 +320,19 @@ fn write_project_files(
 
         let target_path = preview_dir.join(relative_path);
         if !target_path.starts_with(preview_dir) {
-            diagnostics.push(format!("Arquivo ignorado por caminho invalido: {}", file.path));
+            diagnostics.push(format!(
+                "Arquivo ignorado por caminho invalido: {}",
+                file.path
+            ));
             continue;
         }
 
         if let Some(parent) = target_path.parent() {
             if let Err(error) = fs::create_dir_all(parent) {
-                diagnostics.push(format!("Falha ao criar pasta de asset {}: {error}", file.path));
+                diagnostics.push(format!(
+                    "Falha ao criar pasta de asset {}: {error}",
+                    file.path
+                ));
                 continue;
             }
         }
@@ -398,6 +428,7 @@ enum CompileAttempt {
 }
 
 fn create_latex_attempts(
+    app: &AppHandle,
     tex: &str,
     workdir: &Path,
     main_tex_path: &Path,
@@ -406,26 +437,26 @@ fn create_latex_attempts(
     if requires_unicode_engine(tex) {
         if compile_mode == "preview" {
             return vec![
-                run_lualatex_passes(workdir, main_tex_path, 2),
-                run_xelatex_passes(workdir, main_tex_path, 2),
+                run_lualatex_passes(app, workdir, main_tex_path, 2),
+                run_xelatex_passes(app, workdir, main_tex_path, 2),
             ];
         }
 
         return vec![
-            run_latexmk_lualatex(workdir, main_tex_path),
-            run_lualatex(workdir, main_tex_path),
-            run_latexmk_xelatex(workdir, main_tex_path),
-            run_xelatex(workdir, main_tex_path),
+            run_latexmk_lualatex(app, workdir, main_tex_path),
+            run_lualatex(app, workdir, main_tex_path),
+            run_latexmk_xelatex(app, workdir, main_tex_path),
+            run_xelatex(app, workdir, main_tex_path),
         ];
     }
 
     if compile_mode == "preview" {
-        return vec![run_pdflatex_passes(workdir, main_tex_path, 2)];
+        return vec![run_pdflatex_passes(app, workdir, main_tex_path, 2)];
     }
 
     vec![
-        run_latexmk_pdflatex(workdir, main_tex_path),
-        run_pdflatex(workdir, main_tex_path),
+        run_latexmk_pdflatex(app, workdir, main_tex_path),
+        run_pdflatex(app, workdir, main_tex_path),
     ]
 }
 
@@ -465,99 +496,174 @@ fn create_preview_tex_path(main_relative_path: &Path, revision: Option<u64>) -> 
         .extension()
         .map(|value| value.to_string_lossy().to_string())
         .unwrap_or_else(|| "tex".to_string());
-    path.set_file_name(format!("{file_stem}.preview.{}.{extension}", revision.unwrap_or(0)));
+    path.set_file_name(format!(
+        "{file_stem}.preview.{}.{extension}",
+        revision.unwrap_or(0)
+    ));
     path
 }
 
-fn run_latexmk_xelatex(workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
+fn run_latexmk_xelatex(app: &AppHandle, workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command(
+        app,
         "latexmk",
-        &["-xelatex", "-f", "-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-xelatex",
+            "-f",
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
     )
 }
 
-fn run_latexmk_lualatex(workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
+fn run_latexmk_lualatex(app: &AppHandle, workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command(
+        app,
         "latexmk",
-        &["-lualatex", "-f", "-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-lualatex",
+            "-f",
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
     )
 }
 
-fn run_latexmk_pdflatex(workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
+fn run_latexmk_pdflatex(app: &AppHandle, workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command(
+        app,
         "latexmk",
-        &["-pdf", "-f", "-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-pdf",
+            "-f",
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
     )
 }
 
-fn run_xelatex(workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
+fn run_xelatex(app: &AppHandle, workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command(
+        app,
         "xelatex",
-        &["-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
     )
 }
 
-fn run_xelatex_passes(workdir: &Path, main_tex_path: &Path, passes: usize) -> CompileAttempt {
+fn run_xelatex_passes(
+    app: &AppHandle,
+    workdir: &Path,
+    main_tex_path: &Path,
+    passes: usize,
+) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command_passes(
+        app,
         "xelatex",
-        &["-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
         passes,
     )
 }
 
-fn run_lualatex(workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
+fn run_lualatex(app: &AppHandle, workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command(
+        app,
         "lualatex",
-        &["-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
     )
 }
 
-fn run_lualatex_passes(workdir: &Path, main_tex_path: &Path, passes: usize) -> CompileAttempt {
+fn run_lualatex_passes(
+    app: &AppHandle,
+    workdir: &Path,
+    main_tex_path: &Path,
+    passes: usize,
+) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command_passes(
+        app,
         "lualatex",
-        &["-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
         passes,
     )
 }
 
-fn run_pdflatex(workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
+fn run_pdflatex(app: &AppHandle, workdir: &Path, main_tex_path: &Path) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command(
+        app,
         "pdflatex",
-        &["-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
     )
 }
 
-fn run_pdflatex_passes(workdir: &Path, main_tex_path: &Path, passes: usize) -> CompileAttempt {
+fn run_pdflatex_passes(
+    app: &AppHandle,
+    workdir: &Path,
+    main_tex_path: &Path,
+    passes: usize,
+) -> CompileAttempt {
     let main_tex = main_tex_path.to_string_lossy();
     run_command_passes(
+        app,
         "pdflatex",
-        &["-interaction=nonstopmode", "-halt-on-error", main_tex.as_ref()],
+        &[
+            "-interaction=nonstopmode",
+            "-halt-on-error",
+            main_tex.as_ref(),
+        ],
         workdir,
         passes,
     )
 }
 
-fn run_command_passes(program: &str, args: &[&str], workdir: &Path, passes: usize) -> CompileAttempt {
+fn run_command_passes(
+    app: &AppHandle,
+    program: &str,
+    args: &[&str],
+    workdir: &Path,
+    passes: usize,
+) -> CompileAttempt {
     let mut diagnostics = Vec::new();
 
     for pass in 1..=passes {
-        match run_command(program, args, workdir) {
+        match run_command(app, program, args, workdir) {
             CompileAttempt::Success(message) => {
                 diagnostics.push(format!("Passada {pass}/{passes}: {message}"));
             }
@@ -572,17 +678,192 @@ fn run_command_passes(program: &str, args: &[&str], workdir: &Path, passes: usiz
     CompileAttempt::Success(diagnostics.join("\n"))
 }
 
-fn run_command(program: &str, args: &[&str], workdir: &Path) -> CompileAttempt {
-    let output = Command::new(program).args(args).current_dir(workdir).output();
+fn run_command(app: &AppHandle, program: &str, args: &[&str], workdir: &Path) -> CompileAttempt {
+    let resolved_program = resolve_latex_program(app, program);
+    let mut command = Command::new(&resolved_program.command);
+    command.args(args).current_dir(workdir);
+    if let Some(path_dir) = &resolved_program.path_dir {
+        let next_path = prepend_path(path_dir);
+        command.env("PATH", next_path);
+    }
+    let output = command.output();
 
     match output {
-        Ok(output) if output.status.success() => CompileAttempt::Success(format!("{program} executado com sucesso")),
-        Ok(output) => CompileAttempt::Failed(vec![
-            format!("{program} retornou codigo de erro."),
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            String::from_utf8_lossy(&output.stdout).trim().to_string(),
-        ]),
-        Err(error) => CompileAttempt::Failed(vec![format!("{program} indisponivel: {error}")]),
+        Ok(output) if output.status.success() => {
+            let mut diagnostics = resolved_program.diagnostics;
+            diagnostics.push(format!("{program} executado com sucesso"));
+            CompileAttempt::Success(diagnostics.join("\n"))
+        }
+        Ok(output) => {
+            let mut diagnostics = resolved_program.diagnostics;
+            diagnostics.extend([
+                format!("{program} retornou codigo de erro."),
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            ]);
+            CompileAttempt::Failed(diagnostics)
+        }
+        Err(error) => {
+            let mut diagnostics = resolved_program.diagnostics;
+            diagnostics.push(format!("{program} indisponivel: {error}"));
+            CompileAttempt::Failed(diagnostics)
+        }
+    }
+}
+
+fn resolve_latex_program(app: &AppHandle, program: &str) -> ResolvedLatexProgram {
+    let mut diagnostics = Vec::new();
+    if let Some(resolved) = resolve_manual_latex_program(program, &mut diagnostics) {
+        return resolved;
+    }
+
+    if let Some(resolved) = resolve_bundled_latex_program(app, program, &mut diagnostics) {
+        return resolved;
+    }
+
+    diagnostics.push(format!("Toolchain LaTeX: tentando {program} pelo PATH."));
+    ResolvedLatexProgram {
+        command: PathBuf::from(program),
+        path_dir: None,
+        diagnostics,
+    }
+}
+
+fn resolve_manual_latex_program(
+    program: &str,
+    diagnostics: &mut Vec<String>,
+) -> Option<ResolvedLatexProgram> {
+    let mut candidates = Vec::new();
+    if let Ok(manual_bin) = env::var("EDITORTEX_LATEX_BIN") {
+        candidates.push(PathBuf::from(manual_bin));
+    }
+    if let Ok(manual_home) = env::var("EDITORTEX_LATEX_HOME") {
+        let manual_home = PathBuf::from(manual_home);
+        candidates.push(manual_home.join("bin"));
+        candidates.push(manual_home.join("bin").join(platform_bin_name()));
+        candidates.push(manual_home);
+    }
+
+    for candidate in candidates {
+        match resolve_program_candidate(&candidate, program) {
+            Some(command) => {
+                diagnostics.push(format!(
+                    "Toolchain LaTeX: usando {program} manual em {}.",
+                    command.to_string_lossy()
+                ));
+                return Some(ResolvedLatexProgram {
+                    path_dir: command.parent().map(Path::to_path_buf),
+                    command,
+                    diagnostics: diagnostics.clone(),
+                });
+            }
+            None => diagnostics.push(format!(
+                "Toolchain LaTeX manual: {program} nao encontrado em {}.",
+                candidate.to_string_lossy()
+            )),
+        }
+    }
+
+    None
+}
+
+fn resolve_bundled_latex_program(
+    app: &AppHandle,
+    program: &str,
+    diagnostics: &mut Vec<String>,
+) -> Option<ResolvedLatexProgram> {
+    for directory in bundled_latex_bin_directories(app) {
+        let Some(command) = resolve_program_candidate(&directory, program) else {
+            continue;
+        };
+
+        diagnostics.push(format!(
+            "Toolchain LaTeX: usando {program} embutido em {}.",
+            command.to_string_lossy()
+        ));
+        return Some(ResolvedLatexProgram {
+            path_dir: command.parent().map(Path::to_path_buf),
+            command,
+            diagnostics: diagnostics.clone(),
+        });
+    }
+
+    diagnostics
+        .push("Toolchain LaTeX embutido: runtime nao encontrado nos resources do app.".to_string());
+    None
+}
+
+fn bundled_latex_bin_directories(app: &AppHandle) -> Vec<PathBuf> {
+    let mut directories = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        directories.push(resource_dir.join("latex-runtime").join("bin"));
+        directories.push(
+            resource_dir
+                .join("latex-runtime")
+                .join("bin")
+                .join(platform_bin_name()),
+        );
+    }
+    directories
+}
+
+fn resolve_program_candidate(candidate: &Path, program: &str) -> Option<PathBuf> {
+    if candidate.is_file() {
+        return is_program_file(candidate, program).then(|| candidate.to_path_buf());
+    }
+
+    if !candidate.is_dir() {
+        return None;
+    }
+
+    let executable_path = candidate.join(format!("{program}{}", executable_suffix()));
+    if executable_path.is_file() {
+        return Some(executable_path);
+    }
+
+    let extensionless_path = candidate.join(program);
+    if extensionless_path.is_file() {
+        return Some(extensionless_path);
+    }
+
+    None
+}
+
+fn is_program_file(file_path: &Path, program: &str) -> bool {
+    let Some(file_name) = file_path.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    file_name.eq_ignore_ascii_case(program)
+        || file_name.eq_ignore_ascii_case(&format!("{program}{}", executable_suffix()))
+}
+
+fn prepend_path(directory: &Path) -> String {
+    let mut paths = vec![directory.to_path_buf()];
+    if let Some(current_path) = env::var_os("PATH") {
+        paths.extend(env::split_paths(&current_path));
+    }
+
+    env::join_paths(paths)
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string()
+}
+
+fn executable_suffix() -> &'static str {
+    if cfg!(windows) {
+        ".exe"
+    } else {
+        ""
+    }
+}
+
+fn platform_bin_name() -> &'static str {
+    if cfg!(windows) {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
     }
 }
 
@@ -590,7 +871,11 @@ fn sanitize_cache_key(value: &str) -> String {
     let sanitized: String = value
         .chars()
         .map(|character| {
-            if character.is_ascii_alphanumeric() || character == '.' || character == '_' || character == '-' {
+            if character.is_ascii_alphanumeric()
+                || character == '.'
+                || character == '_'
+                || character == '-'
+            {
                 character
             } else {
                 '-'

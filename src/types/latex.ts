@@ -37,15 +37,7 @@ export interface ParsedLatexTemplate {
 
 export type UploadedTemplateSourceType = "tex-file" | "overleaf-zip";
 
-export type LatexProjectFileKind =
-  | "tex"
-  | "image"
-  | "bib"
-  | "class"
-  | "style"
-  | "pdf"
-  | "auxiliary"
-  | "other";
+export type LatexProjectFileKind = "tex" | "image" | "bib" | "class" | "style" | "pdf" | "auxiliary" | "other";
 
 export interface LatexProjectFile {
   path: string;

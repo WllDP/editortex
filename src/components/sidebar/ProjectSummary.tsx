@@ -34,7 +34,9 @@ export function ProjectSummary() {
                 <span className="min-w-0 flex-1 truncate">{asset.path}</span>
               </div>
             ))}
-            {remainingAssets > 0 ? <div className="px-1.5 text-[#94A3B8]">+{remainingAssets} assets adicionais</div> : null}
+            {remainingAssets > 0 ? (
+              <div className="px-1.5 text-[#94A3B8]">+{remainingAssets} assets adicionais</div>
+            ) : null}
           </div>
         ) : null}
       </div>
