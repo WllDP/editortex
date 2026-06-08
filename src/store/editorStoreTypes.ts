@@ -12,7 +12,7 @@ export interface EditorStore {
   preview: PreviewState;
   loadTemplate: (fileName: string, content: string, project?: UploadedLatexProject, mode?: UploadMode) => void;
   addBlock: (definitionId: string) => void;
-  insertBlockAfter: (anchorBlockId: string, definitionId: string) => void;
+  insertBlockAfter: (anchorBlockId: string, definitionId: string) => string | undefined;
   updateBlockData: (blockId: string, data: Record<string, string>) => void;
   attachImageToBlock: (blockId: string, file: File) => Promise<void>;
   duplicateBlock: (blockId: string) => void;

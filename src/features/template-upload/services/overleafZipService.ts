@@ -102,7 +102,7 @@ async function extractOverleafZip(file: File): Promise<ExtractedLatexProject> {
   const texFiles = files.filter((projectFile) => projectFile.kind === "tex" && projectFile.content);
   const mainTex = selectMainTexFile(texFiles);
   if (!mainTex?.content) {
-    throw new Error("O ZIP nÃ£o contÃ©m um arquivo .tex principal reconhecÃ­vel.");
+    throw new Error("O ZIP não contém um arquivo .tex principal reconhecível.");
   }
 
   return {

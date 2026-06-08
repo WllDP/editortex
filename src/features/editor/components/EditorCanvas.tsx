@@ -1,7 +1,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { LayoutTemplate, PlusCircle, SquareStack } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SortableBlockCard } from "@/features/editor/components/SortableBlockCard";
 import { ModuleList } from "@/components/sidebar/ModuleList";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,40 @@ import { cn } from "@/utils/cn";
 
 export function EditorCanvas() {
   const document = useEditorStore((state) => state.document);
+  const selectedBlockId = useEditorStore((state) => state.selectedBlockId);
   const orderedBlocks = useMemo(() => [...document.blocks].sort((a, b) => a.order - b.order), [document.blocks]);
   const { isOver, setNodeRef } = useDroppable({ id: "editor-dropzone" });
   const [isDynamicEditorMode, setIsDynamicEditorMode] = useState(false);
   const [isBlockLibraryOpen, setIsBlockLibraryOpen] = useState(false);
   const [suggestionAnchorBlockId, setSuggestionAnchorBlockId] = useState<string>();
+  const lastBlockId = orderedBlocks.at(-1)?.id;
+  const visibleSuggestionBlockId = isDynamicEditorMode ? (suggestionAnchorBlockId ?? lastBlockId) : undefined;
+
+  useEffect(() => {
+    if (!isDynamicEditorMode || !selectedBlockId) {
+      return;
+    }
+
+    const selectedBlockExists = orderedBlocks.some((block) => block.id === selectedBlockId);
+    if (selectedBlockExists) {
+      setSuggestionAnchorBlockId(selectedBlockId);
+    }
+  }, [isDynamicEditorMode, orderedBlocks, selectedBlockId]);
+
+  useEffect(() => {
+    if (!isDynamicEditorMode || !suggestionAnchorBlockId) {
+      return;
+    }
+
+    const anchorExists = orderedBlocks.some((block) => block.id === suggestionAnchorBlockId);
+    if (!anchorExists) {
+      setSuggestionAnchorBlockId(lastBlockId);
+    }
+  }, [isDynamicEditorMode, lastBlockId, orderedBlocks, suggestionAnchorBlockId]);
+
+  function handleSuggestionInserted(blockId: string) {
+    setSuggestionAnchorBlockId(blockId);
+  }
 
   return (
     <main className="app-panel relative z-10 flex min-h-0 flex-col overflow-hidden rounded-l-2xl rounded-r-none border-r-0">
@@ -97,9 +126,8 @@ export function EditorCanvas() {
                       <SortableBlockCard
                         key={block.id}
                         block={block}
-                        showSuggestions={suggestionAnchorBlockId === block.id}
-                        suggestionsEnabled={isDynamicEditorMode}
-                        onRequestSuggestions={setSuggestionAnchorBlockId}
+                        showSuggestions={visibleSuggestionBlockId === block.id}
+                        onSuggestionInserted={handleSuggestionInserted}
                       />
                     ))}
                   </div>

@@ -51,7 +51,7 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
       const definition = get().availableBlocks.find((block) => block.id === definitionId);
       const anchor = get().document.blocks.find((block) => block.id === anchorBlockId);
       if (!definition || !anchor) {
-        return;
+        return undefined;
       }
 
       const data = definition.fields.reduce<Record<string, string>>((values, field) => {
@@ -78,6 +78,7 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
         }),
       }));
       get().markPreviewDirty();
+      return instance.id;
     },
     updateBlockData: (blockId, data) => {
       set((state) => ({

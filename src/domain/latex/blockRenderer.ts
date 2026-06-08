@@ -24,7 +24,7 @@ export function renderBlockToLatex(block: BlockInstance, definition?: BlockDefin
   }
 
   if (!definition) {
-    return `% Bloco sem definiÃ§Ã£o: ${block.type}`;
+    return `% Bloco sem definição: ${block.type}`;
   }
 
   const renderedArguments = definition.fields.map((field) => {

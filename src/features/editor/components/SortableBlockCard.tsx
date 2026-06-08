@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Copy, GripVertical, ImagePlus, Trash2 } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
 import { SuggestionCarousel } from "@/features/block-suggestions/SuggestionCarousel";
@@ -15,13 +15,11 @@ import { cn } from "@/utils/cn";
 export const SortableBlockCard = memo(function SortableBlockCard({
   block,
   showSuggestions,
-  suggestionsEnabled,
-  onRequestSuggestions,
+  onSuggestionInserted,
 }: {
   block: BlockInstance;
   showSuggestions: boolean;
-  suggestionsEnabled: boolean;
-  onRequestSuggestions: (blockId: string) => void;
+  onSuggestionInserted: (blockId: string) => void;
 }) {
   const articleRef = useRef<HTMLElement | null>(null);
   const availableBlocks = useEditorStore((state) => state.availableBlocks);
@@ -64,14 +62,11 @@ export const SortableBlockCard = memo(function SortableBlockCard({
     articleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [isSelected]);
 
-  function handleFieldBlur() {
-    if (suggestionsEnabled) {
-      onRequestSuggestions(block.id);
-    }
-  }
-
   function handleSuggestionSelect(definitionId: string) {
-    insertBlockAfter(block.id, definitionId);
+    const insertedBlockId = insertBlockAfter(block.id, definitionId);
+    if (insertedBlockId) {
+      onSuggestionInserted(insertedBlockId);
+    }
   }
 
   return (
@@ -174,7 +169,6 @@ export const SortableBlockCard = memo(function SortableBlockCard({
                         value={block.data[field.id] ?? ""}
                         placeholder={field.placeholder}
                         onFocus={() => selectBlock(block.id)}
-                        onBlur={handleFieldBlur}
                         onDoubleClick={(event) => event.stopPropagation()}
                         onChange={(event) => updateBlockData(block.id, { [field.id]: event.target.value })}
                       />
@@ -211,7 +205,6 @@ export const SortableBlockCard = memo(function SortableBlockCard({
                       value={block.data[field.id] ?? ""}
                       placeholder={field.placeholder}
                       onFocus={() => selectBlock(block.id)}
-                      onBlur={handleFieldBlur}
                       onDoubleClick={(event) => event.stopPropagation()}
                       onChange={(event) => updateBlockData(block.id, { [field.id]: event.target.value })}
                     />
@@ -222,9 +215,20 @@ export const SortableBlockCard = memo(function SortableBlockCard({
           </div>
         </div>
       </motion.article>
-      {suggestionsEnabled && showSuggestions ? (
-        <SuggestionCarousel suggestions={suggestions} onSelect={handleSuggestionSelect} />
-      ) : null}
+      <AnimatePresence initial={false}>
+        {showSuggestions ? (
+          <motion.div
+            key="block-suggestions"
+            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0, y: -8 }}
+            animate={{ height: "auto", opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: -6 }}
+            transition={{ duration: 0.24, ease: [0.25, 0.8, 0.25, 1] }}
+          >
+            <SuggestionCarousel suggestions={suggestions} onSelect={handleSuggestionSelect} />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 });

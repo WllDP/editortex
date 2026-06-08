@@ -611,8 +611,8 @@ function extractCoverTitle(source: string) {
     return [normalizedTitle, normalizedSubtitle].filter(Boolean).join("\\\\");
   }
 
-  const title = extractCoverNodeText(source, "T[ÃI]TULO PRINCIPAL");
-  const subtitle = extractCoverNodeText(source, "SUBT[ÃI]TULO");
+  const title = extractCoverNodeText(source, "T.*TULO PRINCIPAL");
+  const subtitle = extractCoverNodeText(source, "SUBT.*TULO");
 
   if (title || subtitle) {
     return [title, subtitle].filter(Boolean).join("\\\\");

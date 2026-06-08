@@ -5,7 +5,7 @@ export function createBlockDefinitionFromVariable(variable: LatexVariable, comma
   const fieldCount = Math.max(variable.parameterCount, 1);
   const fields: BlockFieldDefinition[] = Array.from({ length: fieldCount }, (_, index) => ({
     id: `arg${index + 1}`,
-    label: fieldCount === 1 ? "Texto" : `ParÃ¢metro ${index + 1}`,
+    label: fieldCount === 1 ? "Texto" : `Parâmetro ${index + 1}`,
     type: "textarea",
     placeholder: "Digite o texto do bloco",
     required: index === 0,
@@ -16,7 +16,7 @@ export function createBlockDefinitionFromVariable(variable: LatexVariable, comma
     id: `command:${variable.name}`,
     name: variable.name,
     type: "latex-command",
-    category: "MÃ³dulos de Texto",
+    category: "Módulos de Texto",
     variableName: variable.name,
     latexTemplate: command?.rawDefinition ?? `\\${variable.name}{#1}`,
     fields,
