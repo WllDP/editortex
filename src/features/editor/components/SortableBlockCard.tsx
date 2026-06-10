@@ -2,7 +2,8 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, GripVertical, ImagePlus, Trash2 } from "lucide-react";
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { SuggestionCarousel } from "@/features/block-suggestions/SuggestionCarousel";
 import { useBlockSuggestions } from "@/features/block-suggestions/hooks/useBlockSuggestions";
 import type { BlockInstance } from "@/types/blocks";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditorStore } from "@/store/editorStore";
+import { useNotificationStore } from "@/store/notificationStore";
 import { cn } from "@/utils/cn";
 
 export const SortableBlockCard = memo(function SortableBlockCard({
@@ -22,6 +24,8 @@ export const SortableBlockCard = memo(function SortableBlockCard({
   onSuggestionInserted: (blockId: string) => void;
 }) {
   const articleRef = useRef<HTMLElement | null>(null);
+  const collapseResetTimeoutRef = useRef<number>();
+  const [isDragCollapseInstant, setIsDragCollapseInstant] = useState(false);
   const availableBlocks = useEditorStore((state) => state.availableBlocks);
   const documentBlocks = useEditorStore((state) => state.document.blocks);
   const definition = availableBlocks.find((candidate) => candidate.id === block.definitionId);
@@ -34,6 +38,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
   const selectBlock = useEditorStore((state) => state.selectBlock);
   const pendingFocusBlockId = useEditorStore((state) => state.pendingFocusBlockId);
   const clearPendingBlockFocus = useEditorStore((state) => state.clearPendingBlockFocus);
+  const notify = useNotificationStore((state) => state.notify);
   const currentIndex = documentBlocks.findIndex((candidate) => candidate.id === block.id);
   const suggestions = useBlockSuggestions({
     currentBlock: block,
@@ -45,6 +50,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
     id: block.id,
     data: {
       type: "document-block",
+      blockId: block.id,
     },
   });
 
@@ -63,6 +69,14 @@ export const SortableBlockCard = memo(function SortableBlockCard({
 
     articleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [isSelected]);
+
+  useEffect(() => {
+    return () => {
+      if (collapseResetTimeoutRef.current) {
+        window.clearTimeout(collapseResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isSelected || pendingFocusBlockId !== block.id) {
@@ -88,27 +102,31 @@ export const SortableBlockCard = memo(function SortableBlockCard({
   }
 
   return (
-    <div data-editor-block-card>
+    <div ref={setNodeRef} style={style} data-editor-block-card>
       <motion.article
         ref={(node) => {
           articleRef.current = node;
-          setNodeRef(node);
         }}
-        layoutId={isDragging ? undefined : `document-block-${block.id}`}
-        layout="position"
+        initial={pendingFocusBlockId === block.id ? { opacity: 0 } : false}
+        animate={{ opacity: isDragging ? 0.45 : 1 }}
+        layoutId={isDragging || isDragCollapseInstant ? undefined : `document-block-${block.id}`}
+        layout={isDragCollapseInstant ? false : "position"}
         transition={{
+          opacity: {
+            duration: 0.18,
+            ease: [0.25, 0.8, 0.25, 1] as const,
+          },
           layout: {
             duration: 0.18,
             ease: [0.25, 0.8, 0.25, 1] as const,
           },
         }}
-        style={style}
         data-editor-block-surface
         tabIndex={-1}
         className={cn(
           "metro-card overflow-hidden rounded-3xl transition-[opacity,background-color,border-color] duration-200 hover:bg-white/[0.1]",
           isSelected && "border-[#22D3EE]/45 bg-white/[0.12] shadow-[inset_0_0_0_1px_rgba(34,211,238,0.22)]",
-          isDragging && "relative z-30 scale-[0.98] opacity-45",
+          isDragging && "relative z-30 scale-[0.98]",
         )}
         onFocus={() => selectBlock(block.id)}
         onClick={() => selectBlock(block.id)}
@@ -129,6 +147,20 @@ export const SortableBlockCard = memo(function SortableBlockCard({
               className="touch-none cursor-grab rounded-xl border border-white/14 bg-white/[0.07] p-1 text-[#22D3EE] transition-colors hover:bg-white/[0.12] hover:text-white active:cursor-grabbing"
               {...attributes}
               {...listeners}
+              onPointerDownCapture={() => {
+                if (isSelected) {
+                  flushSync(() => {
+                    setIsDragCollapseInstant(true);
+                    selectBlock(undefined);
+                  });
+                  if (collapseResetTimeoutRef.current) {
+                    window.clearTimeout(collapseResetTimeoutRef.current);
+                  }
+                  collapseResetTimeoutRef.current = window.setTimeout(() => {
+                    setIsDragCollapseInstant(false);
+                  }, 180);
+                }
+              }}
               tabIndex={-1}
             >
               <GripVertical className="h-4 w-4" />
@@ -178,7 +210,8 @@ export const SortableBlockCard = memo(function SortableBlockCard({
 
         <div
           className={cn(
-            "grid transition-[grid-template-rows,opacity] duration-300 ease-out",
+            "grid",
+            isDragCollapseInstant ? "transition-none" : "transition-[grid-template-rows,opacity] duration-300 ease-out",
             isSelected ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
           )}
         >
@@ -219,7 +252,13 @@ export const SortableBlockCard = memo(function SortableBlockCard({
                         onChange={(event) => {
                           const [file] = Array.from(event.target.files ?? []);
                           if (file) {
-                            void attachImageToBlock(block.id, file);
+                            void attachImageToBlock(block.id, file).catch((err: unknown) => {
+                              notify({
+                                kind: "error",
+                                title: "Falha ao anexar imagem",
+                                message: err instanceof Error ? err.message : "Nao foi possivel carregar a imagem.",
+                              });
+                            });
                           }
                           event.target.value = "";
                         }}

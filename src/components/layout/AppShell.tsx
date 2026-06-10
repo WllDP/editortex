@@ -1,9 +1,9 @@
 import {
   DndContext,
   type CollisionDetection,
-  type DropAnimation,
   DragEndEvent,
   DragOverlay,
+  DragOverEvent,
   DragStartEvent,
   PointerSensor,
   closestCenter,
@@ -27,17 +27,7 @@ const SHELL_GAP_WIDTH = 0;
 const SHELL_GAP_COUNT = 0;
 const MAX_PANEL_RATIO = 1.5;
 const CENTER_SNAP_THRESHOLD = 28;
-const dragDropAnimation: DropAnimation = {
-  duration: 180,
-  easing: "cubic-bezier(0.25, 0.8, 0.25, 1)",
-};
 const smoothEase = [0.25, 0.8, 0.25, 1] as const;
-const sharedBlockTransition = {
-  layout: {
-    duration: 0.18,
-    ease: smoothEase,
-  },
-};
 const documentBlockCollisionDetection: CollisionDetection = (args) => {
   const collisions = closestCenter(args);
 
@@ -45,15 +35,17 @@ const documentBlockCollisionDetection: CollisionDetection = (args) => {
     return collisions;
   }
 
-  const sortableCollisions = collisions.filter((collision) => collision.id !== "editor-dropzone");
-  return sortableCollisions.length ? sortableCollisions : collisions;
+  return collisions.filter((collision) => {
+    const droppable = args.droppableContainers.find((container) => container.id === collision.id);
+    return droppable?.data.current?.type === "document-block";
+  });
 };
 
 export function AppShell() {
-  const addBlock = useEditorStore((state) => state.addBlock);
+  const insertBlockAt = useEditorStore((state) => state.insertBlockAt);
   const reorderBlocks = useEditorStore((state) => state.reorderBlocks);
+  const selectBlock = useEditorStore((state) => state.selectBlock);
   const availableBlocks = useEditorStore((state) => state.availableBlocks);
-  const documentBlocks = useEditorStore((state) => state.document.blocks);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const shellRef = useRef<HTMLDivElement | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -61,10 +53,9 @@ export function AppShell() {
   const [isPreviewResizing, setIsPreviewResizing] = useState(false);
   const [isPreviewResizeSnapped, setIsPreviewResizeSnapped] = useState(false);
   const [draggedLibraryBlockId, setDraggedLibraryBlockId] = useState<string>();
-  const [draggedDocumentBlockId, setDraggedDocumentBlockId] = useState<string>();
+  const [libraryInsertionIndex, setLibraryInsertionIndex] = useState<number>();
+  const latestPointerPositionRef = useRef<{ x: number; y: number }>();
   const draggedLibraryBlock = availableBlocks.find((block) => block.id === draggedLibraryBlockId);
-  const draggedDocumentBlock = documentBlocks.find((block) => block.id === draggedDocumentBlockId);
-  const draggedDocumentDefinition = availableBlocks.find((block) => block.id === draggedDocumentBlock?.definitionId);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -75,35 +66,94 @@ export function AppShell() {
     setPreviewWidth(getDefaultPreviewWidth(shell));
   }, [previewWidth]);
 
+  useEffect(() => {
+    function updatePointerPosition(event: PointerEvent) {
+      latestPointerPositionRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+    }
+
+    function updateTouchPosition(event: TouchEvent) {
+      const touch = event.touches[0] ?? event.changedTouches[0];
+      if (!touch) {
+        return;
+      }
+
+      latestPointerPositionRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+    }
+
+    window.addEventListener("pointermove", updatePointerPosition, { passive: true });
+    window.addEventListener("touchmove", updateTouchPosition, { passive: true });
+    window.addEventListener("touchend", updateTouchPosition, { passive: true });
+
+    return () => {
+      window.removeEventListener("pointermove", updatePointerPosition);
+      window.removeEventListener("touchmove", updateTouchPosition);
+      window.removeEventListener("touchend", updateTouchPosition);
+    };
+  }, []);
+
   function handleDragStart(event: DragStartEvent) {
+    latestPointerPositionRef.current = getClientPosition(event.activatorEvent);
+
     if (event.active.data.current?.type === "library-block") {
       setDraggedLibraryBlockId(String(event.active.data.current.definitionId));
-      setDraggedDocumentBlockId(undefined);
+      setLibraryInsertionIndex(undefined);
+      selectBlock(undefined);
       return;
     }
 
     if (event.active.data.current?.type === "document-block") {
-      setDraggedDocumentBlockId(String(event.active.id));
       setDraggedLibraryBlockId(undefined);
+      setLibraryInsertionIndex(undefined);
+      selectBlock(undefined);
     }
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    if (event.active.data.current?.type !== "library-block") {
+      setLibraryInsertionIndex(undefined);
+      return;
+    }
+
+    const pointerPosition = getDragPointerPosition(event, latestPointerPositionRef.current);
+    if (!pointerPosition || !isPointInsideEditorPanel(pointerPosition)) {
+      setLibraryInsertionIndex(undefined);
+      return;
+    }
+
+    setLibraryInsertionIndex(getInsertionIndexFromPointerY(pointerPosition.y));
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    const latestPointerPosition = latestPointerPositionRef.current;
     setDraggedLibraryBlockId(undefined);
-    setDraggedDocumentBlockId(undefined);
+    setLibraryInsertionIndex(undefined);
+    latestPointerPositionRef.current = undefined;
+
+    const activeType = active.data.current?.type;
+    if (activeType === "library-block") {
+      const pointerPosition = getDragPointerPosition(event, latestPointerPosition);
+      if (!pointerPosition || !isPointInsideEditorPanel(pointerPosition)) {
+        return;
+      }
+
+      const definitionId = String(active.data.current?.definitionId);
+      const insertionIndex = getInsertionIndexFromPointerY(pointerPosition.y);
+      insertBlockAt(definitionId, insertionIndex);
+      return;
+    }
 
     if (!over) {
       return;
     }
 
-    const activeType = active.data.current?.type;
-    if (activeType === "library-block") {
-      addBlock(String(active.data.current?.definitionId));
-      return;
-    }
-
-    if (active.id !== over.id && over.id !== "editor-dropzone") {
+    if (activeType === "document-block" && over.data.current?.type === "document-block" && active.id !== over.id) {
       reorderBlocks(String(active.id), String(over.id));
     }
   }
@@ -138,10 +188,12 @@ export function AppShell() {
       sensors={sensors}
       collisionDetection={documentBlockCollisionDetection}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={() => {
         setDraggedLibraryBlockId(undefined);
-        setDraggedDocumentBlockId(undefined);
+        setLibraryInsertionIndex(undefined);
+        latestPointerPositionRef.current = undefined;
       }}
     >
       <LayoutGroup id="editor-block-drag">
@@ -185,7 +237,7 @@ export function AppShell() {
             />
           ) : null}
 
-          <EditorCanvas />
+          <EditorCanvas libraryInsertionIndex={libraryInsertionIndex} />
           <div
             role="separator"
             aria-label="Redimensionar preview PDF"
@@ -205,7 +257,7 @@ export function AppShell() {
           </div>
           <PreviewPanel />
         </div>
-        <DragOverlay dropAnimation={draggedDocumentBlock ? null : dragDropAnimation} zIndex={1000}>
+        <DragOverlay dropAnimation={null} zIndex={1000}>
           {draggedLibraryBlock ? (
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
@@ -219,25 +271,6 @@ export function AppShell() {
                 {draggedLibraryBlock.fields.length}
               </span>
             </motion.div>
-          ) : draggedDocumentBlock ? (
-            <motion.div
-              layoutId={`document-block-${draggedDocumentBlock.id}`}
-              layout="position"
-              initial={{ opacity: 0.85 }}
-              animate={{ opacity: 1 }}
-              transition={sharedBlockTransition}
-              className="flex min-h-12 w-[min(520px,calc(100vw-48px))] items-center gap-3 rounded-2xl border border-[#22D3EE]/45 bg-[#111936]/92 px-3 py-2.5 text-left text-sm font-semibold leading-none text-white shadow-[0_22px_58px_rgba(34,211,238,0.22)] backdrop-blur-2xl"
-            >
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#22D3EE]/15 text-[#22D3EE]">
-                ::
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {draggedDocumentDefinition?.name ?? draggedDocumentBlock.variableName}
-              </span>
-              <span className="shrink-0 rounded-full border border-white/12 bg-white/[0.07] px-2 py-1 text-xs font-semibold leading-none text-[#D1D5DB]">
-                {draggedDocumentDefinition?.fields.length ?? 0}
-              </span>
-            </motion.div>
           ) : null}
         </DragOverlay>
       </LayoutGroup>
@@ -247,6 +280,80 @@ export function AppShell() {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function isPointInsideEditorPanel(point: { x: number; y: number }) {
+  const dropzone = document.querySelector<HTMLElement>("[data-editor-dropzone]");
+  if (!dropzone) {
+    return false;
+  }
+
+  const dropzoneRect = dropzone.getBoundingClientRect();
+  return (
+    point.x >= dropzoneRect.left &&
+    point.x <= dropzoneRect.right &&
+    point.y >= dropzoneRect.top &&
+    point.y <= dropzoneRect.bottom
+  );
+}
+
+function getInsertionIndexFromPointerY(pointerY: number) {
+  const blockCards = Array.from(document.querySelectorAll<HTMLElement>("[data-editor-block-card]"));
+  const targetIndex = blockCards.findIndex((card) => {
+    const rect = card.getBoundingClientRect();
+    return pointerY < rect.top + rect.height / 2;
+  });
+
+  return targetIndex === -1 ? blockCards.length : targetIndex;
+}
+
+function getDragPointerPosition(event: DragEndEvent | DragOverEvent, latestPointerPosition?: { x: number; y: number }) {
+  if (latestPointerPosition) {
+    return latestPointerPosition;
+  }
+
+  const initialPosition = getClientPosition(event.activatorEvent);
+  if (initialPosition) {
+    return {
+      x: initialPosition.x + event.delta.x,
+      y: initialPosition.y + event.delta.y,
+    };
+  }
+
+  const translatedRect = event.active.rect.current.translated;
+  if (!translatedRect) {
+    return undefined;
+  }
+
+  return {
+    x: translatedRect.left + translatedRect.width / 2,
+    y: translatedRect.top + translatedRect.height / 2,
+  };
+}
+
+function getClientPosition(event: Event) {
+  if (event instanceof MouseEvent) {
+    return {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  if (typeof TouchEvent !== "undefined" && event instanceof TouchEvent && event.touches.length > 0) {
+    return {
+      x: event.touches[0].clientX,
+      y: event.touches[0].clientY,
+    };
+  }
+
+  if (typeof TouchEvent !== "undefined" && event instanceof TouchEvent && event.changedTouches.length > 0) {
+    return {
+      x: event.changedTouches[0].clientX,
+      y: event.changedTouches[0].clientY,
+    };
+  }
+
+  return undefined;
 }
 
 function getDefaultPreviewWidth(shell: HTMLDivElement | null) {

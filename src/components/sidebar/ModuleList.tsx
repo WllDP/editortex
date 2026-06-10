@@ -25,7 +25,7 @@ export function ModuleList() {
 }
 
 function DraggableModule({ block }: { block: BlockDefinition }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `library:${block.id}`,
     data: {
       type: "library-block",
@@ -33,20 +33,12 @@ function DraggableModule({ block }: { block: BlockDefinition }) {
     },
   });
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        zIndex: isDragging ? 80 : undefined,
-      }
-    : undefined;
-
   return (
     <button
       ref={setNodeRef}
-      style={style}
       className={cn(
         "flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-white/14 bg-white/[0.07] px-3 py-2 text-left text-sm font-semibold leading-none text-white shadow-[0_10px_28px_rgba(0,0,0,0.24)] backdrop-blur-xl transition-colors duration-200 hover:bg-white/[0.11]",
-        isDragging && "scale-[0.98] border-[#60A5FA]/40 bg-[#2563EB]/70",
+        isDragging && "border-[#60A5FA]/40 bg-[#2563EB]/40 opacity-55",
       )}
       {...listeners}
       {...attributes}

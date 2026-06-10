@@ -4,6 +4,7 @@ type NotificationKind = "info" | "warning" | "error" | "success";
 
 export interface SystemNotification {
   id: string;
+  key?: string;
   kind: NotificationKind;
   title: string;
   message?: string;
@@ -22,13 +23,35 @@ export const useNotificationStore = create<NotificationStore>((set) => ({
     const id = crypto.randomUUID();
 
     set((state) => ({
-      notifications: [...state.notifications, { ...notification, id }].slice(-4),
+      notifications: upsertNotification(state.notifications, { ...notification, id }),
     }));
 
     window.setTimeout(() => closeNotification(set, id), 6000);
   },
   dismiss: (id) => closeNotification(set, id),
 }));
+
+function upsertNotification(notifications: SystemNotification[], notification: SystemNotification) {
+  if (!notification.key) {
+    return [...notifications, notification].slice(-4);
+  }
+
+  const existingIndex = notifications.findIndex((item) => item.key === notification.key && !item.isClosing);
+  if (existingIndex === -1) {
+    return [...notifications, notification].slice(-4);
+  }
+
+  return notifications.map((item, index) =>
+    index === existingIndex
+      ? {
+          ...item,
+          kind: notification.kind,
+          title: notification.title,
+          message: notification.message,
+        }
+      : item,
+  );
+}
 
 function closeNotification(
   set: (

@@ -25,7 +25,7 @@ function NotificationToast({ notification, onDismiss }: { notification: SystemNo
   return (
     <div
       className={cn(
-        "pointer-events-auto flex items-start gap-3 rounded-2xl border border-white/14 bg-[#111936]/92 p-3 text-white shadow-[0_18px_48px_rgba(0,0,0,0.36)] backdrop-blur-2xl transition-[transform,opacity] duration-300 ease-out",
+        "pointer-events-auto flex items-start gap-3 rounded-2xl border border-white/18 bg-[#111936]/98 p-3 text-white shadow-[0_18px_48px_rgba(0,0,0,0.46)] backdrop-blur-md transition-[transform,opacity] duration-300 ease-out",
         notification.isClosing
           ? "translate-x-[120%] opacity-0"
           : "translate-x-0 opacity-100 animate-[toast-slide-in_300ms_ease-out]",
@@ -39,7 +39,9 @@ function NotificationToast({ notification, onDismiss }: { notification: SystemNo
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold leading-5">{notification.title}</p>
         {notification.message ? (
-          <p className="mt-0.5 text-xs font-medium leading-5 text-[#CBD5E1]">{notification.message}</p>
+          <p className="mt-0.5 whitespace-pre-line text-xs font-semibold leading-5 text-[#E2E8F0]">
+            {notification.message}
+          </p>
         ) : null}
       </div>
       <button

@@ -26,8 +26,12 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
   const [pageSize, setPageSize] = useState<PdfPageSize>({ width: 794, height: 1123 });
   const [viewportWidth, setViewportWidth] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+  const [reloadAttempt, setReloadAttempt] = useState(0);
+  const [renderRefreshKey, setRenderRefreshKey] = useState(0);
   const pageCacheRef = useRef(new Map<number, Promise<any>>());
   const pdfRef = useRef<any>();
+  const blankFirstPageRetryRef = useRef(0);
+  const coverRefreshTimeoutsRef = useRef<number[]>([]);
   const pageScale = useMemo(() => {
     if (!viewportWidth) {
       return 1;
@@ -36,6 +40,7 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
     const availableWidth = Math.max(viewportWidth - PREVIEW_PADDING_X, 0);
     return Math.min(1, Math.max(MIN_PREVIEW_SCALE, availableWidth / pageSize.width));
   }, [pageSize.width, viewportWidth]);
+  const canRenderPages = Boolean(pdf && viewportWidth > 0);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -57,17 +62,28 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
   }, []);
 
   useEffect(() => {
+    blankFirstPageRetryRef.current = 0;
+    coverRefreshTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    coverRefreshTimeoutsRef.current = [];
+    setReloadAttempt(0);
+    setRenderRefreshKey(0);
+  }, [pdfUrl]);
+
+  useEffect(() => {
     void pdfRef.current?.destroy?.();
     pdfRef.current = undefined;
     pageCacheRef.current.clear();
     setPdf(undefined);
     setNumPages(0);
+    setRenderRefreshKey(0);
 
     if (!pdfUrl) {
+      blankFirstPageRetryRef.current = 0;
       setMessage("Preview PDF real sera exibido apos a compilacao LaTeX.");
       return;
     }
 
+    const activePdfUrl = pdfUrl;
     let disposed = false;
     const startedAt = performance.now();
     setMessage("Carregando PDF...");
@@ -75,7 +91,7 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
     async function loadPdf() {
       try {
         const loadingTask = getDocument({
-          url: pdfUrl,
+          url: createPdfUrlWithRendererReload(activePdfUrl, reloadAttempt),
           disableRange: true,
           disableStream: true,
         });
@@ -94,6 +110,13 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
         setPageSize({ width: firstViewport.width, height: firstViewport.height });
         setCurrentPage(1);
         setMessage("");
+        scheduleCoverRefresh();
+        window.requestAnimationFrame(() => {
+          if (!disposed) {
+            containerRef.current?.scrollTo({ top: 0, left: 0 });
+            setCurrentPage(1);
+          }
+        });
         console.info(
           `[EditorTex perf] pdf.js carregar documento: ${(performance.now() - startedAt).toFixed(1)}ms | paginas=${loadedPdf.numPages}`,
         );
@@ -110,8 +133,10 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
 
     return () => {
       disposed = true;
+      coverRefreshTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      coverRefreshTimeoutsRef.current = [];
     };
-  }, [pdfUrl]);
+  }, [pdfUrl, reloadAttempt]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -132,6 +157,25 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
 
   const pages = useMemo(() => Array.from({ length: numPages }, (_, index) => index + 1), [numPages]);
   const getPage = useCallback((pageNumber: number) => getCachedPage(pdf, pageCacheRef.current, pageNumber), [pdf]);
+  const handleBlankFirstPage = useCallback(() => {
+    if (blankFirstPageRetryRef.current >= 2) {
+      return;
+    }
+
+    blankFirstPageRetryRef.current += 1;
+    setMessage("Recarregando capa do PDF...");
+    window.setTimeout(() => setReloadAttempt((attempt) => attempt + 1), 350);
+  }, []);
+
+  function scheduleCoverRefresh() {
+    coverRefreshTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    coverRefreshTimeoutsRef.current = [450, 1100].map((delay) =>
+      window.setTimeout(() => {
+        pageCacheRef.current.delete(1);
+        setRenderRefreshKey((key) => key + 1);
+      }, delay),
+    );
+  }
 
   return (
     <div ref={containerRef} className="h-full overflow-auto bg-[#eef1f7] p-6">
@@ -140,15 +184,17 @@ export function PdfRenderer({ pdfUrl, onTextDoubleClick }: PdfRendererProps) {
           const shouldRender = Math.abs(pageNumber - currentPage) <= 1;
           return (
             <PdfPage
-              key={`${pdfUrl}-${pageNumber}`}
-              active={shouldRender}
+              key={`${pdfUrl}-${pageNumber}-${pageScale.toFixed(4)}`}
+              active={canRenderPages && shouldRender}
               pageNumber={pageNumber}
               pageSize={pageSize}
               pageScale={pageScale}
               pdf={pdf}
+              renderRefreshKey={renderRefreshKey}
               renderTextLayer={pageNumber === currentPage}
               getPage={getPage}
               onTextDoubleClick={onTextDoubleClick}
+              onBlankFirstPage={handleBlankFirstPage}
             />
           );
         })}
@@ -168,18 +214,22 @@ function PdfPage({
   pageSize,
   pageScale,
   pdf,
+  renderRefreshKey,
   renderTextLayer: shouldRenderTextLayer,
   getPage,
   onTextDoubleClick,
+  onBlankFirstPage,
 }: {
   active: boolean;
   pageNumber: number;
   pageSize: PdfPageSize;
   pageScale: number;
   pdf?: any;
+  renderRefreshKey: number;
   renderTextLayer: boolean;
   getPage: (pageNumber: number) => Promise<any>;
   onTextDoubleClick?: (text: string) => void;
+  onBlankFirstPage?: () => void;
 }) {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const renderIdRef = useRef(0);
@@ -228,6 +278,10 @@ function PdfPage({
         return;
       }
 
+      if (pageNumber === 1 && isCanvasVisuallyBlank(canvas)) {
+        onBlankFirstPage?.();
+      }
+
       target.replaceChildren(canvas);
       if (shouldRenderTextLayer) {
         await renderTextLayer(page, viewport, target, onTextDoubleClick);
@@ -251,7 +305,17 @@ function PdfPage({
         target.replaceChildren();
       }
     };
-  }, [active, getPage, onTextDoubleClick, pageNumber, pageScale, pdf, shouldRenderTextLayer]);
+  }, [
+    active,
+    getPage,
+    onBlankFirstPage,
+    onTextDoubleClick,
+    pageNumber,
+    pageScale,
+    pdf,
+    renderRefreshKey,
+    shouldRenderTextLayer,
+  ]);
 
   return (
     <div
@@ -271,6 +335,57 @@ function createPageRenderMessage(message: string) {
     "absolute inset-0 z-[3] grid place-items-center bg-white text-center text-xs font-medium text-slate-400";
   element.textContent = message;
   return element;
+}
+
+function createPdfUrlWithRendererReload(pdfUrl: string, reloadAttempt: number) {
+  if (reloadAttempt <= 0) {
+    return pdfUrl;
+  }
+
+  const separator = pdfUrl.includes("?") ? "&" : "?";
+  return `${pdfUrl}${separator}rendererReload=${reloadAttempt}`;
+}
+
+function isCanvasVisuallyBlank(canvas: HTMLCanvasElement) {
+  const sampleWidth = 160;
+  const sampleHeight = 226;
+  if (sampleWidth <= 0 || sampleHeight <= 0) {
+    return false;
+  }
+
+  const sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = sampleWidth;
+  sampleCanvas.height = sampleHeight;
+  const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
+  if (!sampleContext) {
+    return false;
+  }
+
+  sampleContext.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
+  const imageData = sampleContext.getImageData(0, 0, sampleWidth, sampleHeight).data;
+  const pixelCount = sampleWidth * sampleHeight;
+  const sampleStep = Math.max(1, Math.floor(pixelCount / 3000));
+  let sampledPixels = 0;
+  let visiblePixels = 0;
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += sampleStep) {
+    const dataIndex = pixelIndex * 4;
+    const red = imageData[dataIndex];
+    const green = imageData[dataIndex + 1];
+    const blue = imageData[dataIndex + 2];
+    const alpha = imageData[dataIndex + 3];
+    const isVisible =
+      alpha > 12 &&
+      (red < 245 || green < 245 || blue < 245) &&
+      Math.max(Math.abs(red - green), Math.abs(red - blue), Math.abs(green - blue)) + (255 - red) > 18;
+
+    sampledPixels += 1;
+    if (isVisible) {
+      visiblePixels += 1;
+    }
+  }
+
+  return sampledPixels > 0 && visiblePixels / sampledPixels < 0.002;
 }
 
 function getCachedPage(pdf: any, cache: Map<number, Promise<any>>, pageNumber: number) {

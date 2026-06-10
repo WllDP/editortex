@@ -1,3 +1,4 @@
+import { arrayMove } from "@dnd-kit/sortable";
 import type { BlockInstance } from "@/types/blocks";
 import type { EditorStore, EditorStoreGet, EditorStoreSet } from "@/store/editorStoreTypes";
 import { normalizeDocumentOrder, normalizeSearchText, scoreBlockPreviewMatch } from "@/store/storeHelpers";
@@ -5,6 +6,7 @@ import { normalizeDocumentOrder, normalizeSearchText, scoreBlockPreviewMatch } f
 type BlockSlice = Pick<
   EditorStore,
   | "addBlock"
+  | "insertBlockAt"
   | "insertBlockAfter"
   | "updateBlockData"
   | "duplicateBlock"
@@ -16,72 +18,58 @@ type BlockSlice = Pick<
 >;
 
 export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): BlockSlice {
+  function createBlockInstance(definitionId: string): BlockInstance | undefined {
+    const definition = get().availableBlocks.find((block) => block.id === definitionId);
+    if (!definition) {
+      return undefined;
+    }
+
+    const data = definition.fields.reduce<Record<string, string>>((values, field) => {
+      values[field.id] = field.defaultValue ?? "";
+      return values;
+    }, {});
+
+    return {
+      id: crypto.randomUUID(),
+      definitionId: definition.id,
+      type: definition.type,
+      variableName: definition.variableName,
+      order: get().document.blocks.length,
+      data,
+      metadata: {},
+    };
+  }
+
   return {
     addBlock: (definitionId) => {
-      const definition = get().availableBlocks.find((block) => block.id === definitionId);
-      if (!definition) {
+      get().insertBlockAt(definitionId, get().document.blocks.length);
+    },
+    insertBlockAt: (definitionId, index) => {
+      const instance = createBlockInstance(definitionId);
+      if (!instance) {
         return;
       }
 
-      const data = definition.fields.reduce<Record<string, string>>((values, field) => {
-        values[field.id] = field.defaultValue ?? "";
-        return values;
-      }, {});
-
-      const instance: BlockInstance = {
-        id: crypto.randomUUID(),
-        definitionId: definition.id,
-        type: definition.type,
-        variableName: definition.variableName,
-        order: get().document.blocks.length,
-        data,
-        metadata: {},
-      };
-
       set((state) => ({
         selectedBlockId: instance.id,
         pendingFocusBlockId: instance.id,
         document: normalizeDocumentOrder({
           ...state.document,
-          blocks: [...state.document.blocks, instance],
-          updatedAt: new Date().toISOString(),
-        }),
-      }));
-      get().markPreviewDirty();
-    },
-    insertBlockAfter: (anchorBlockId, definitionId) => {
-      const definition = get().availableBlocks.find((block) => block.id === definitionId);
-      const anchor = get().document.blocks.find((block) => block.id === anchorBlockId);
-      if (!definition || !anchor) {
-        return undefined;
-      }
-
-      const data = definition.fields.reduce<Record<string, string>>((values, field) => {
-        values[field.id] = field.defaultValue ?? "";
-        return values;
-      }, {});
-
-      const instance: BlockInstance = {
-        id: crypto.randomUUID(),
-        definitionId: definition.id,
-        type: definition.type,
-        variableName: definition.variableName,
-        order: anchor.order + 0.5,
-        data,
-        metadata: {},
-      };
-
-      set((state) => ({
-        selectedBlockId: instance.id,
-        pendingFocusBlockId: instance.id,
-        document: normalizeDocumentOrder({
-          ...state.document,
-          blocks: [...state.document.blocks, instance],
+          blocks: insertBlockAtIndex(state.document.blocks, instance, index),
           updatedAt: new Date().toISOString(),
         }),
       }));
       get().markPreviewDirty();
       return instance.id;
+    },
+    insertBlockAfter: (anchorBlockId, definitionId) => {
+      const blocks = [...get().document.blocks].sort((a, b) => a.order - b.order);
+      const anchorIndex = blocks.findIndex((block) => block.id === anchorBlockId);
+      if (anchorIndex === -1) {
+        return undefined;
+      }
+
+      return get().insertBlockAt(definitionId, anchorIndex + 1);
     },
     updateBlockData: (blockId, data) => {
       set((state) => ({
@@ -153,13 +141,15 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
           return state;
         }
 
-        const [activeBlock] = blocks.splice(activeIndex, 1);
-        blocks.splice(overIndex, 0, activeBlock);
+        const reorderedBlocks = arrayMove(blocks, activeIndex, overIndex).map((block, index) => ({
+          ...block,
+          order: index,
+        }));
 
         return {
           document: normalizeDocumentOrder({
             ...state.document,
-            blocks,
+            blocks: reorderedBlocks,
             updatedAt: new Date().toISOString(),
           }),
         };
@@ -193,4 +183,15 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
       }
     },
   };
+}
+
+function insertBlockAtIndex(blocks: BlockInstance[], blockToInsert: BlockInstance, index: number) {
+  const orderedBlocks = [...blocks].sort((a, b) => a.order - b.order);
+  const insertionIndex = Math.min(Math.max(index, 0), orderedBlocks.length);
+  orderedBlocks.splice(insertionIndex, 0, blockToInsert);
+
+  return orderedBlocks.map((block, blockIndex) => ({
+    ...block,
+    order: blockIndex,
+  }));
 }

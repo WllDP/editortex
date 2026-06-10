@@ -1,25 +1,62 @@
 import { ChevronDown, FileArchive, FolderHeart, Library } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { nativeTemplates, type NativeTemplate } from "@/features/template-library/nativeTemplates";
 import { useNativeTemplateLoader } from "@/features/template-library/hooks/useNativeTemplateLoader";
+import {
+  getRecentTemplatePayload,
+  getRecentTemplates,
+  subscribeToRecentTemplates,
+} from "@/features/template-library/recentTemplates";
+import { useEditorStore } from "@/store/editorStore";
+import { useNotificationStore } from "@/store/notificationStore";
 import { cn } from "@/utils/cn";
 
 export function TemplateLibrary() {
   const [isOpen, setIsOpen] = useState(false);
   const [loadingTemplateId, setLoadingTemplateId] = useState<string>();
-  const [error, setError] = useState<string>();
+  const [loadingRecentTemplateFileName, setLoadingRecentTemplateFileName] = useState<string>();
+  const [recentTemplates, setRecentTemplates] = useState(() => getRecentTemplates());
   const loadNativeTemplate = useNativeTemplateLoader();
+  const loadTemplate = useEditorStore((state) => state.loadTemplate);
+  const notify = useNotificationStore((state) => state.notify);
+
+  useEffect(() => {
+    return subscribeToRecentTemplates(() => setRecentTemplates(getRecentTemplates()));
+  }, []);
 
   async function handleLoadNativeTemplate(template: NativeTemplate) {
     try {
-      setError(undefined);
       setLoadingTemplateId(template.id);
       await loadNativeTemplate(template);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao carregar template nativo.");
+      notify({
+        kind: "error",
+        title: "Falha ao carregar template nativo",
+        message: err instanceof Error ? err.message : "Nao foi possivel carregar o template selecionado.",
+      });
     } finally {
       setLoadingTemplateId(undefined);
+    }
+  }
+
+  async function handleLoadRecentTemplate(fileName: string) {
+    try {
+      setLoadingRecentTemplateFileName(fileName);
+      const payload = await getRecentTemplatePayload(fileName);
+      if (!payload) {
+        throw new Error("Cache local deste template nao esta mais disponivel.");
+      }
+
+      loadTemplate(payload.fileName, payload.content, payload.project, payload.mode);
+    } catch (err) {
+      notify({
+        kind: "error",
+        title: "Falha ao carregar template recente",
+        message: err instanceof Error ? err.message : "Nao foi possivel carregar o template do cache local.",
+      });
+    } finally {
+      setLoadingRecentTemplateFileName(undefined);
     }
   }
 
@@ -67,17 +104,34 @@ export function TemplateLibrary() {
               </div>
             </TemplateGroup>
 
-            <TemplateGroup icon={FolderHeart} title="Templates salvos">
-              <div className="rounded-2xl border border-dashed border-white/16 bg-white/[0.045] px-3 py-3 text-xs font-medium leading-snug text-[#94A3B8]">
-                Nenhum template salvo ainda.
-              </div>
+            <TemplateGroup icon={FolderHeart} title="Ultimos Templates">
+              {recentTemplates.length > 0 ? (
+                <div className="space-y-2">
+                  {recentTemplates.map((template) => (
+                    <button
+                      key={template.fileName}
+                      type="button"
+                      className="w-full rounded-2xl border border-white/14 bg-white/[0.055] px-3 py-2.5 text-left shadow-[0_10px_26px_rgba(0,0,0,0.2)] transition-colors duration-200 hover:border-[#22D3EE]/40 hover:bg-white/[0.1]"
+                      disabled={loadingRecentTemplateFileName === template.fileName}
+                      onClick={() => void handleLoadRecentTemplate(template.fileName)}
+                    >
+                      <span className="block truncate text-sm font-semibold text-white">{template.fileName}</span>
+                      <span className="mt-1 block truncate text-xs font-medium text-[#94A3B8]">
+                        {loadingRecentTemplateFileName === template.fileName
+                          ? "Carregando template..."
+                          : template.sourceType === "overleaf-zip"
+                            ? "Arquivo ZIP"
+                            : "Arquivo TEX"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/16 bg-white/[0.045] px-3 py-3 text-xs font-medium leading-snug text-[#94A3B8]">
+                  Nenhum template utilizado ainda.
+                </div>
+              )}
             </TemplateGroup>
-
-            {error ? (
-              <span className="block rounded-xl border border-[#FB7185]/40 bg-[#F43F5E]/75 px-2 py-1 text-xs font-semibold text-white shadow-[0_0_24px_rgba(244,63,94,0.18)]">
-                {error}
-              </span>
-            ) : null}
           </div>
         </div>
       </div>

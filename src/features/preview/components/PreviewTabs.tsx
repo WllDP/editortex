@@ -59,8 +59,8 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
       </button>
       <div
         className={cn(
-          "inline-flex shrink-0 items-center gap-1 rounded-xl border transition-[background-color,border-color,padding] duration-300 ease-out",
-          activeTab === "pdf" ? "border-white/[0.07] bg-white/[0.035] p-1" : "border-transparent bg-transparent p-0",
+          "inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border transition-[background-color,border-color,padding] duration-300 ease-out",
+          activeTab === "pdf" ? "border-white/[0.07] bg-white/[0.035] px-1" : "border-transparent bg-transparent px-0",
         )}
       >
         <button
@@ -87,7 +87,7 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
               variant="ghost"
               size="icon"
               type="button"
-              className="h-9 w-9 rounded-xl bg-transparent text-white shadow-none backdrop-blur-0 transition-colors duration-200 hover:bg-white/15 hover:text-white disabled:opacity-45"
+              className="h-7 w-7 rounded-lg border-transparent bg-transparent text-white/90 shadow-none backdrop-blur-0 transition-colors duration-200 hover:border-transparent hover:bg-white/12 hover:text-white disabled:opacity-45"
               aria-label="Atualizar PDF"
               disabled={!canUpdatePdf}
               onClick={onUpdatePdf}

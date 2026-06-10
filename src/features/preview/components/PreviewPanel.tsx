@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { CompileStatus } from "@/features/preview/components/CompileStatus";
 import { ExportMenu } from "@/features/preview/components/ExportMenu";
 import { HtmlBlockPreview } from "@/features/preview/components/HtmlBlockPreview";
 import { PreviewPlaceholder } from "@/features/preview/components/PreviewPlaceholder";
@@ -34,9 +33,10 @@ export function PreviewPanel() {
   const [activeTab, setActiveTab] = useState<PreviewTab>("visual");
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [exportMenuPosition, setExportMenuPosition] = useState<{ top: number; right: number }>();
-  const [isCompileMessageVisible, setIsCompileMessageVisible] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const exportMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastCompileNotificationKeyRef = useRef<string>();
+  const hasShownStaleNotificationInPdfVisitRef = useRef(false);
   const isDesktopRuntime = isTauriRuntime();
   const canCompilePreview = isDesktopRuntime || import.meta.env.DEV;
   const compileMessageKey = [preview.error, ...preview.diagnostics].filter(Boolean).join("\n");
@@ -68,18 +68,43 @@ export function PreviewPanel() {
   });
 
   useEffect(() => {
-    if (!compileMessageKey) {
-      setIsCompileMessageVisible(false);
+    if (!compileMessageKey || preview.status === "queued" || preview.status === "rendering") {
       return;
     }
 
-    setIsCompileMessageVisible(true);
-    const timeoutId = window.setTimeout(() => {
-      setIsCompileMessageVisible(false);
-    }, 10000);
+    if (lastCompileNotificationKeyRef.current === compileMessageKey) {
+      return;
+    }
 
-    return () => window.clearTimeout(timeoutId);
-  }, [compileMessageKey]);
+    lastCompileNotificationKeyRef.current = compileMessageKey;
+    notify({
+      kind: preview.status === "error" ? "error" : "info",
+      title: preview.status === "error" ? "Falha ao compilar PDF" : "PDF compilado",
+      message:
+        preview.status === "error"
+          ? [preview.error, ...preview.diagnostics].filter(Boolean).at(0)
+          : getCompiledPdfNotificationMessage(preview.diagnostics),
+    });
+  }, [compileMessageKey, notify, preview.diagnostics, preview.error, preview.status]);
+
+  useEffect(() => {
+    if (activeTab !== "pdf" || !preview.isStale || !preview.pdfUrl) {
+      hasShownStaleNotificationInPdfVisitRef.current = false;
+      return;
+    }
+
+    if (hasShownStaleNotificationInPdfVisitRef.current) {
+      return;
+    }
+
+    hasShownStaleNotificationInPdfVisitRef.current = true;
+    notify({
+      key: "pdf-stale",
+      kind: "warning",
+      title: "PDF desatualizado",
+      message: "A aba Visual ja reflete as alteracoes recentes. Atualize o PDF para ver a versao compilada.",
+    });
+  }, [activeTab, notify, preview.isStale, preview.pdfUrl]);
 
   function updateExportMenuPosition() {
     const button = exportMenuButtonRef.current;
@@ -181,13 +206,6 @@ export function PreviewPanel() {
           </div>
         </div>
 
-        {activeTab === "pdf" && preview.isStale && preview.pdfUrl ? (
-          <p className="mx-4 mt-2 rounded-2xl border border-[#FF4D9D]/35 bg-[#FF4D9D]/72 px-3 py-2 text-xs font-semibold text-white shadow-[0_0_26px_rgba(255,77,157,0.18)]">
-            PDF desatualizado. A aba Visual ja reflete as alteracoes recentes.
-          </p>
-        ) : null}
-
-        <CompileStatus preview={preview} visible={isCompileMessageVisible} />
         <div className="flex min-h-0 flex-1 flex-col">
           {activeTab === "visual" ? (
             <HtmlBlockPreview
@@ -203,7 +221,11 @@ export function PreviewPanel() {
             </Suspense>
           ) : preview.pdfUrl ? (
             <Suspense fallback={<PreviewPlaceholder label="Carregando visualizador PDF..." />}>
-              <PdfRenderer pdfUrl={preview.pdfUrl} onTextDoubleClick={selectBlockByPreviewText} />
+              <PdfRenderer
+                key={`${preview.pdfUrl}-${preview.compiledRevision ?? preview.updatedAt ?? "pending"}`}
+                pdfUrl={preview.pdfUrl}
+                onTextDoubleClick={selectBlockByPreviewText}
+              />
             </Suspense>
           ) : (
             <PreviewPlaceholder label={pdfPlaceholderLabel} />
@@ -224,6 +246,16 @@ function getPdfPlaceholderLabel(hasUploadedTemplate: boolean, canCompilePreview:
   }
 
   return "Clique em Atualizar PDF para visualizar o PDF compilado.";
+}
+
+function getCompiledPdfNotificationMessage(diagnostics: string[]) {
+  const combinedDiagnostics = diagnostics.join("\n");
+  const timeMatch =
+    combinedDiagnostics.match(/Tempo\s+total:\s*([^\n.]+(?:\.[0-9]+)?ms)/i) ??
+    combinedDiagnostics.match(/Tempo\s+escrita\s+temporarios:\s*([^\n.]+(?:\.[0-9]+)?ms)/i) ??
+    combinedDiagnostics.match(/([0-9]+(?:\.[0-9]+)?ms)/i);
+
+  return timeMatch?.[1] ? `Tempo: ${timeMatch[1]}` : "Compilacao concluida.";
 }
 
 function getStatusColor(status: "idle" | "queued" | "rendering" | "ready" | "error") {

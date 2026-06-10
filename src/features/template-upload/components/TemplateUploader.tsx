@@ -1,12 +1,13 @@
 import { Upload } from "lucide-react";
 import { ChangeEvent, useState } from "react";
 import { useTemplateUpload } from "@/features/template-upload/hooks/useTemplateUpload";
+import { useNotificationStore } from "@/store/notificationStore";
 import type { UploadMode } from "@/types/document";
 import { cn } from "@/utils/cn";
 
 export function TemplateUploader() {
   const uploadTemplate = useTemplateUpload();
-  const [error, setError] = useState<string>();
+  const notify = useNotificationStore((state) => state.notify);
   const [mode, setMode] = useState<UploadMode>("import-document");
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -16,10 +17,13 @@ export function TemplateUploader() {
     }
 
     try {
-      setError(undefined);
       await uploadTemplate(file, mode);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao carregar template.");
+      notify({
+        kind: "error",
+        title: "Falha ao anexar template",
+        message: err instanceof Error ? err.message : "Nao foi possivel carregar o arquivo selecionado.",
+      });
     } finally {
       event.target.value = "";
     }
@@ -55,11 +59,6 @@ export function TemplateUploader() {
           onChange={handleFileChange}
         />
       </label>
-      {error ? (
-        <span className="mt-2 block rounded-xl border border-[#FB7185]/40 bg-[#F43F5E]/75 px-2 py-1 text-xs font-semibold text-white shadow-[0_0_24px_rgba(244,63,94,0.18)]">
-          {error}
-        </span>
-      ) : null}
     </div>
   );
 }

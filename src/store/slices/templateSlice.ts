@@ -1,6 +1,7 @@
 import { createBlockRegistry } from "@/domain/blocks/blockRegistry";
 import { importTemplateBodyAsBlocks } from "@/domain/document/parser/documentBlockImporter";
 import { parseLatexTemplate } from "@/domain/document/parser/latexParser";
+import { saveRecentTemplate } from "@/features/template-library/recentTemplates";
 import { initialPreview } from "@/store/initialState";
 import type { EditorStore, EditorStoreGet, EditorStoreSet } from "@/store/editorStoreTypes";
 import type { UploadedLatexProject, UploadedTemplate } from "@/types/latex";
@@ -41,6 +42,14 @@ export function createTemplateSlice(set: EditorStoreSet, _get: EditorStoreGet): 
       const registry = createBlockRegistry(parsedTemplate);
       const importedBlocks =
         mode === "import-document" ? importTemplateBodyAsBlocks(parsedTemplate, registry.definitions) : [];
+      saveRecentTemplate({
+        fileName: uploadedTemplate.fileName,
+        name: uploadedTemplate.name,
+        content: uploadedTemplate.content,
+        project: uploadedTemplate.project,
+        mode,
+        sourceType: uploadedTemplate.sourceType,
+      });
 
       set((state) => ({
         uploadedTemplate,

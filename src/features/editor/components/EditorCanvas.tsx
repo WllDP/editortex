@@ -1,5 +1,6 @@
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { AnimatePresence, motion } from "framer-motion";
 import { LayoutTemplate, PlusCircle, SquareStack } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SortableBlockCard } from "@/features/editor/components/SortableBlockCard";
@@ -8,11 +9,16 @@ import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/store/editorStore";
 import { cn } from "@/utils/cn";
 
-export function EditorCanvas() {
+export function EditorCanvas({ libraryInsertionIndex }: { libraryInsertionIndex?: number }) {
   const document = useEditorStore((state) => state.document);
   const selectedBlockId = useEditorStore((state) => state.selectedBlockId);
   const orderedBlocks = useMemo(() => [...document.blocks].sort((a, b) => a.order - b.order), [document.blocks]);
-  const { isOver, setNodeRef } = useDroppable({ id: "editor-dropzone" });
+  const { isOver, setNodeRef } = useDroppable({
+    id: "editor-dropzone",
+    data: {
+      type: "editor-dropzone",
+    },
+  });
   const [isDynamicEditorMode, setIsDynamicEditorMode] = useState(false);
   const [isBlockLibraryOpen, setIsBlockLibraryOpen] = useState(false);
   const [suggestionAnchorBlockId, setSuggestionAnchorBlockId] = useState<string>();
@@ -103,6 +109,7 @@ export function EditorCanvas() {
         <div className="flex min-h-0 flex-1">
           <div
             ref={setNodeRef}
+            data-editor-dropzone
             className={cn(
               "stable-scroll min-h-0 flex-1 overflow-y-auto bg-transparent py-6 pl-6 pr-8",
               isOver && "bg-[#22D3EE]/12",
@@ -125,14 +132,17 @@ export function EditorCanvas() {
               ) : (
                 <SortableContext items={orderedBlocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-3">
-                    {orderedBlocks.map((block) => (
-                      <SortableBlockCard
-                        key={block.id}
-                        block={block}
-                        showSuggestions={visibleSuggestionBlockId === block.id}
-                        onSuggestionInserted={handleSuggestionInserted}
-                      />
+                    {orderedBlocks.map((block, index) => (
+                      <div key={block.id} className="space-y-3">
+                        <LibraryInsertionPlaceholder isVisible={libraryInsertionIndex === index} />
+                        <SortableBlockCard
+                          block={block}
+                          showSuggestions={visibleSuggestionBlockId === block.id}
+                          onSuggestionInserted={handleSuggestionInserted}
+                        />
+                      </div>
                     ))}
+                    <LibraryInsertionPlaceholder isVisible={libraryInsertionIndex === orderedBlocks.length} />
                   </div>
                 </SortableContext>
               )}
@@ -162,6 +172,24 @@ export function EditorCanvas() {
         </div>
       </div>
     </main>
+  );
+}
+
+function LibraryInsertionPlaceholder({ isVisible }: { isVisible: boolean }) {
+  return (
+    <AnimatePresence initial={false}>
+      {isVisible ? (
+        <motion.div
+          key="library-insertion-placeholder"
+          aria-hidden="true"
+          initial={{ height: 0 }}
+          animate={{ height: 76 }}
+          exit={{ height: 0 }}
+          transition={{ duration: 0.18, ease: [0.25, 0.8, 0.25, 1] }}
+          className="pointer-events-none overflow-hidden"
+        />
+      ) : null}
+    </AnimatePresence>
   );
 }
 

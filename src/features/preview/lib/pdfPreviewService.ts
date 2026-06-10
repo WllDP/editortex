@@ -73,7 +73,11 @@ export async function compileLatexPreview(
 
     return {
       pdfPath,
-      pdfUrl: result.pdfUrl ?? (pdfPath ? withCacheBuster(convertFileSrc(pdfPath)) : undefined),
+      pdfUrl: result.pdfUrl
+        ? withCacheBuster(result.pdfUrl)
+        : pdfPath
+          ? withCacheBuster(convertFileSrc(pdfPath))
+          : undefined,
       revision,
       diagnostics: result.diagnostics ?? [],
     };
