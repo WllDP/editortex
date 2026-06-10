@@ -11,6 +11,7 @@ type BlockSlice = Pick<
   | "removeBlock"
   | "reorderBlocks"
   | "selectBlock"
+  | "clearPendingBlockFocus"
   | "selectBlockByPreviewText"
 >;
 
@@ -39,6 +40,7 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
 
       set((state) => ({
         selectedBlockId: instance.id,
+        pendingFocusBlockId: instance.id,
         document: normalizeDocumentOrder({
           ...state.document,
           blocks: [...state.document.blocks, instance],
@@ -71,6 +73,7 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
 
       set((state) => ({
         selectedBlockId: instance.id,
+        pendingFocusBlockId: instance.id,
         document: normalizeDocumentOrder({
           ...state.document,
           blocks: [...state.document.blocks, instance],
@@ -108,6 +111,7 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
 
       set((state) => ({
         selectedBlockId: duplicate.id,
+        pendingFocusBlockId: duplicate.id,
         document: normalizeDocumentOrder({
           ...state.document,
           blocks: [...state.document.blocks, duplicate],
@@ -163,6 +167,11 @@ export function createBlockSlice(set: EditorStoreSet, get: EditorStoreGet): Bloc
       get().markPreviewDirty();
     },
     selectBlock: (blockId) => set({ selectedBlockId: blockId }),
+    clearPendingBlockFocus: (blockId) => {
+      if (get().pendingFocusBlockId === blockId) {
+        set({ pendingFocusBlockId: undefined });
+      }
+    },
     selectBlockByPreviewText: (text) => {
       const query = normalizeSearchText(text);
       if (query.length < 3) {

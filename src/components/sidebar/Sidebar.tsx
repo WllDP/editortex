@@ -1,5 +1,6 @@
 import { FileUp, X } from "lucide-react";
 import { ProjectSummary } from "@/components/sidebar/ProjectSummary";
+import { TemplateLibrary } from "@/features/template-library/components/TemplateLibrary";
 import { TemplateUploader } from "@/features/template-upload/components/TemplateUploader";
 import editorTexLogo from "@/assets/editortex-logo-256.png";
 import { useEditorStore } from "@/store/editorStore";
@@ -39,7 +40,9 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        <section className="metro-card rounded-xl">
+        <TemplateLibrary />
+
+        <section className="metro-card mt-3 rounded-xl">
           <Header icon={FileUp} label="Upload de Template" />
           <div className="border-t border-white/12 p-3">
             <TemplateUploader />

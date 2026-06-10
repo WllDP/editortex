@@ -29,8 +29,8 @@ export function HtmlPreviewBlock({
       <div
         ref={registerBlockRef}
         className={cn(
-          "my-8 border-t border-dashed border-zinc-300 pt-2 text-center text-[11px] text-zinc-400",
-          selected && "bg-primary/10",
+          "my-8 border-t border-dashed border-zinc-300 pt-2 text-center text-[11px] text-zinc-400 transition-colors duration-300",
+          selected && "bg-[#DBEAFE]/75",
         )}
         onClick={() => onSelectBlock?.(block.id)}
       >
@@ -43,8 +43,8 @@ export function HtmlPreviewBlock({
     <section
       ref={registerBlockRef}
       className={cn(
-        "group relative -mx-3 rounded-md px-3 py-1 transition",
-        selected ? "bg-[#DBEAFE] ring-[3px] ring-[#2563EB]" : "hover:bg-[#E0F2FE]",
+        "group relative -mx-3 rounded-md px-3 py-1 transition-colors duration-300",
+        selected ? "bg-[#DBEAFE]/75" : "hover:bg-[#E0F2FE]",
       )}
       onClick={() => onSelectBlock?.(block.id)}
     >

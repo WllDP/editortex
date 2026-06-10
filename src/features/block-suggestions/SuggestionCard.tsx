@@ -1,15 +1,22 @@
 import { Plus } from "lucide-react";
+import { forwardRef, type KeyboardEventHandler } from "react";
 import type { BlockSuggestion } from "@/features/block-suggestions/types";
 import { cn } from "@/utils/cn";
 
 interface SuggestionCardProps {
   suggestion: BlockSuggestion;
   onSelect: (definitionId: string) => void;
+  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  onFocus?: () => void;
 }
 
-export function SuggestionCard({ suggestion, onSelect }: SuggestionCardProps) {
+export const SuggestionCard = forwardRef<HTMLButtonElement, SuggestionCardProps>(function SuggestionCard(
+  { suggestion, onSelect, onKeyDown, onFocus },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       className={cn(
         "flex h-24 min-w-[178px] max-w-[178px] flex-col justify-between rounded-2xl border bg-white/[0.065] p-3 text-left transition-colors hover:bg-white/[0.11]",
@@ -18,6 +25,8 @@ export function SuggestionCard({ suggestion, onSelect }: SuggestionCardProps) {
         suggestion.strength === "final" && "border-[#FF4D9D]/24",
       )}
       onClick={() => onSelect(suggestion.block.id)}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
     >
       <span className="flex items-start justify-between gap-2">
         <span className="line-clamp-2 text-sm font-semibold leading-tight text-white">{suggestion.block.name}</span>
@@ -26,4 +35,4 @@ export function SuggestionCard({ suggestion, onSelect }: SuggestionCardProps) {
       <span className="truncate text-[11px] font-medium text-[#94A3B8]">{suggestion.reason}</span>
     </button>
   );
-}
+});

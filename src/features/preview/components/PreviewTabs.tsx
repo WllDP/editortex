@@ -1,4 +1,5 @@
 import { Code2, Loader2, RefreshCw } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/utils/cn";
 
@@ -13,8 +14,37 @@ interface PreviewTabsProps {
 }
 
 export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, onUpdatePdf }: PreviewTabsProps) {
+  function handlePreviewTabsKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab" || event.shiftKey) {
+      return;
+    }
+
+    const previewOptions = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled])"),
+    );
+    const lastPreviewOption = previewOptions.at(-1);
+    if (document.activeElement !== lastPreviewOption) {
+      return;
+    }
+
+    const firstEditorFocusTarget =
+      document.querySelector<HTMLElement>(
+        '[data-editor-block-card] textarea:not([disabled]), [data-editor-block-card] input:not([type="hidden"]):not([disabled])',
+      ) ?? document.querySelector<HTMLElement>("[data-editor-block-card] [data-editor-block-surface]");
+    if (!firstEditorFocusTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    firstEditorFocusTarget.focus();
+  }
+
   return (
-    <div className="inline-flex shrink-0 items-center gap-1.5 overflow-hidden rounded-2xl border border-white/14 bg-white/[0.07] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+    <div
+      className="inline-flex shrink-0 items-center gap-1.5 overflow-hidden rounded-2xl border border-white/14 bg-white/[0.07] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+      data-preview-tabs
+      onKeyDown={handlePreviewTabsKeyDown}
+    >
       <button
         className={cn(
           "h-9 rounded-xl px-3.5 text-sm font-semibold leading-none transition-colors duration-200",

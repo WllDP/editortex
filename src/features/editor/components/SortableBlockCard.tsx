@@ -32,6 +32,8 @@ export const SortableBlockCard = memo(function SortableBlockCard({
   const insertBlockAfter = useEditorStore((state) => state.insertBlockAfter);
   const removeBlock = useEditorStore((state) => state.removeBlock);
   const selectBlock = useEditorStore((state) => state.selectBlock);
+  const pendingFocusBlockId = useEditorStore((state) => state.pendingFocusBlockId);
+  const clearPendingBlockFocus = useEditorStore((state) => state.clearPendingBlockFocus);
   const currentIndex = documentBlocks.findIndex((candidate) => candidate.id === block.id);
   const suggestions = useBlockSuggestions({
     currentBlock: block,
@@ -62,6 +64,22 @@ export const SortableBlockCard = memo(function SortableBlockCard({
     articleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [isSelected]);
 
+  useEffect(() => {
+    if (!isSelected || pendingFocusBlockId !== block.id) {
+      return;
+    }
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      const firstTextField = articleRef.current?.querySelector<HTMLTextAreaElement | HTMLInputElement>(
+        'textarea:not([disabled]), input:not([type="hidden"]):not([disabled])',
+      );
+      firstTextField?.focus();
+      clearPendingBlockFocus(block.id);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrameId);
+  }, [block.id, clearPendingBlockFocus, isSelected, pendingFocusBlockId]);
+
   function handleSuggestionSelect(definitionId: string) {
     const insertedBlockId = insertBlockAfter(block.id, definitionId);
     if (insertedBlockId) {
@@ -70,7 +88,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
   }
 
   return (
-    <div>
+    <div data-editor-block-card>
       <motion.article
         ref={(node) => {
           articleRef.current = node;
@@ -85,11 +103,14 @@ export const SortableBlockCard = memo(function SortableBlockCard({
           },
         }}
         style={style}
+        data-editor-block-surface
+        tabIndex={-1}
         className={cn(
           "metro-card overflow-hidden rounded-3xl transition-[opacity,background-color,border-color] duration-200 hover:bg-white/[0.1]",
           isSelected && "border-[#22D3EE]/45 bg-white/[0.12] shadow-[inset_0_0_0_1px_rgba(34,211,238,0.22)]",
           isDragging && "relative z-30 scale-[0.98] opacity-45",
         )}
+        onFocus={() => selectBlock(block.id)}
         onClick={() => selectBlock(block.id)}
         onDoubleClick={(event) => {
           event.stopPropagation();
@@ -108,6 +129,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
               className="touch-none cursor-grab rounded-xl border border-white/14 bg-white/[0.07] p-1 text-[#22D3EE] transition-colors hover:bg-white/[0.12] hover:text-white active:cursor-grabbing"
               {...attributes}
               {...listeners}
+              tabIndex={-1}
             >
               <GripVertical className="h-4 w-4" />
             </button>
@@ -125,6 +147,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
                 variant="ghost"
                 size="icon"
                 type="button"
+                tabIndex={-1}
                 onClick={(event) => {
                   event.stopPropagation();
                   duplicateBlock(block.id);
@@ -137,6 +160,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
                 variant="ghost"
                 size="icon"
                 type="button"
+                tabIndex={-1}
                 onClick={(event) => {
                   event.stopPropagation();
                   removeBlock(block.id);
@@ -177,6 +201,7 @@ export const SortableBlockCard = memo(function SortableBlockCard({
                         size="icon"
                         type="button"
                         aria-label="Anexar imagem"
+                        tabIndex={-1}
                         onClick={(event) => {
                           event.stopPropagation();
                           document.getElementById(`image-upload-${block.id}-${field.id}`)?.click();

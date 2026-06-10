@@ -9,6 +9,7 @@ export interface EditorStore {
   uploadedTemplate?: UploadedTemplate;
   availableBlocks: BlockDefinition[];
   selectedBlockId?: string;
+  pendingFocusBlockId?: string;
   preview: PreviewState;
   loadTemplate: (fileName: string, content: string, project?: UploadedLatexProject, mode?: UploadMode) => void;
   addBlock: (definitionId: string) => void;
@@ -19,6 +20,7 @@ export interface EditorStore {
   removeBlock: (blockId: string) => void;
   reorderBlocks: (activeId: string, overId: string) => void;
   selectBlock: (blockId?: string) => void;
+  clearPendingBlockFocus: (blockId: string) => void;
   selectBlockByPreviewText: (text: string) => void;
   refreshGeneratedTex: () => void;
   ensureGeneratedTex: () => string;

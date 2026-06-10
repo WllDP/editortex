@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HtmlPreviewBlock } from "@/features/preview/components/HtmlPreviewBlock";
 import { HtmlPreviewPage } from "@/features/preview/components/HtmlPreviewPage";
 import {
@@ -28,6 +28,7 @@ export function HtmlBlockPreview({
   onSelectBlock,
 }: HtmlBlockPreviewProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [highlightedBlockId, setHighlightedBlockId] = useState<string>();
   const sortedBlocks = useMemo(() => [...blocks].sort((a, b) => a.order - b.order), [blocks]);
   const hasPreviewContent = sortedBlocks.length > 0;
   const definitionsById = useMemo(() => createDefinitionsById(definitions), [definitions]);
@@ -36,6 +37,20 @@ export function HtmlBlockPreview({
   const tocEntries = useMemo(() => createTocEntries(sortedBlocks, definitionsById), [definitionsById, sortedBlocks]);
   const pageScale = usePreviewScale(viewportRef, hasPreviewContent);
   const registerBlockRef = usePreviewSelection(viewportRef, selectedBlockId, pageScale);
+
+  useEffect(() => {
+    if (!selectedBlockId) {
+      setHighlightedBlockId(undefined);
+      return;
+    }
+
+    setHighlightedBlockId(selectedBlockId);
+    const timeoutId = window.setTimeout(() => {
+      setHighlightedBlockId((current) => (current === selectedBlockId ? undefined : current));
+    }, 1000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [selectedBlockId]);
 
   if (!hasPreviewContent) {
     return (
@@ -61,7 +76,7 @@ export function HtmlBlockPreview({
                 assetsByName={assetsByName}
                 block={block}
                 definition={definitionsById[block.definitionId]}
-                selected={block.id === selectedBlockId}
+                selected={block.id === highlightedBlockId}
                 tocEntries={tocEntries}
                 onSelectBlock={onSelectBlock}
                 registerBlockRef={registerBlockRef(block.id)}
