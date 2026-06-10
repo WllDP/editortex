@@ -127,7 +127,7 @@ export function PreviewPanel() {
   return (
     <>
       <aside className="app-panel relative z-10 flex min-h-0 flex-col overflow-hidden rounded-l-none rounded-r-2xl border-l-0">
-        <div className="h-[104px] shrink-0 overflow-hidden border-b border-white/14 bg-white/[0.055] px-4 py-4 backdrop-blur-xl">
+        <div className="stable-composite stable-glass-header h-[104px] shrink-0 overflow-hidden border-b border-white/14 px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2.5">

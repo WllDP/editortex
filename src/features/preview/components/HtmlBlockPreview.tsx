@@ -65,7 +65,7 @@ export function HtmlBlockPreview({
   return (
     <div
       ref={viewportRef}
-      className="h-full overflow-auto bg-transparent bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:36px_36px] p-6"
+      className="stable-scroll h-full overflow-auto bg-transparent bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:36px_36px] p-6"
     >
       <div className="mx-auto flex w-max flex-col gap-6">
         {pages.map((page, pageIndex) => (

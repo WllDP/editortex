@@ -154,13 +154,6 @@ export function AppShell() {
               : `minmax(${MIN_EDITOR_WIDTH}px, 1fr) ${RESIZER_WIDTH}px 1fr`,
           }}
         >
-          <div
-            className="pointer-events-none absolute inset-y-3 left-3 z-[12] w-[62%] rounded-l-2xl bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:36px_36px] opacity-80 mix-blend-screen [mask-image:linear-gradient(90deg,black_0%,black_66%,rgba(0,0,0,0.42)_82%,transparent_100%)]"
-            aria-hidden="true"
-          />
-          <div className="pointer-events-none fixed right-6 top-5 z-0 rounded-full border border-white/15 bg-white/[0.07] px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-[#E5E7EB] shadow-[0_18px_50px_rgba(0,0,0,0.3)] backdrop-blur-2xl">
-            AI-native document workbench
-          </div>
           <Button
             type="button"
             size="icon"
@@ -197,8 +190,8 @@ export function AppShell() {
             role="separator"
             aria-label="Redimensionar preview PDF"
             className={cn(
-              "group relative z-20 flex cursor-col-resize items-center justify-center border-y border-white/16 bg-white/[0.065] backdrop-blur-xl transition-colors duration-200 hover:bg-white/[0.11]",
-              isPreviewResizing && "bg-white/[0.1]",
+              "stable-composite stable-glass-divider group relative z-20 flex cursor-col-resize items-center justify-center border-y border-white/16 transition-[filter] duration-200 hover:brightness-110",
+              isPreviewResizing && "brightness-110",
             )}
             onPointerDown={startPreviewResize}
           >

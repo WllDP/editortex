@@ -47,7 +47,7 @@ export function EditorCanvas() {
 
   return (
     <main className="app-panel relative z-10 flex min-h-0 flex-col overflow-hidden rounded-l-2xl rounded-r-none border-r-0">
-      <div className="h-[104px] shrink-0 overflow-hidden border-b border-white/14 bg-white/[0.055] py-4 pl-4 pr-6 backdrop-blur-xl">
+      <div className="stable-composite stable-glass-header h-[104px] shrink-0 overflow-hidden border-b border-white/14 py-4 pl-4 pr-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1 pl-16">
             <div className="flex min-w-0 items-center gap-2.5">
@@ -56,7 +56,7 @@ export function EditorCanvas() {
                 <TruncatedDocumentTitle title={document.title} />
               </div>
 
-              <div className="inline-flex shrink-0 items-center gap-1 overflow-hidden rounded-2xl border border-white/14 bg-white/[0.07] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
+              <div className="stable-composite stable-glass-control inline-flex shrink-0 items-center gap-1 overflow-hidden rounded-2xl border border-white/14 p-1.5">
                 <Button
                   type="button"
                   size="sm"
@@ -103,7 +103,10 @@ export function EditorCanvas() {
         <div className="flex min-h-0 flex-1">
           <div
             ref={setNodeRef}
-            className={cn("min-h-0 flex-1 overflow-y-auto bg-transparent py-6 pl-6 pr-8", isOver && "bg-[#22D3EE]/12")}
+            className={cn(
+              "stable-scroll min-h-0 flex-1 overflow-y-auto bg-transparent py-6 pl-6 pr-8",
+              isOver && "bg-[#22D3EE]/12",
+            )}
           >
             <div className="mx-auto max-w-3xl">
               {orderedBlocks.length === 0 ? (
@@ -138,7 +141,7 @@ export function EditorCanvas() {
 
           <aside
             className={cn(
-              "min-h-0 overflow-hidden border-l border-white/14 bg-white/[0.045] backdrop-blur-xl transition-[width,opacity] duration-300",
+              "stable-composite stable-glass-header min-h-0 overflow-hidden border-l border-white/14 transition-[width,opacity] duration-300",
               isBlockLibraryOpen ? "w-[280px] opacity-100" : "w-0 opacity-0",
             )}
             aria-hidden={!isBlockLibraryOpen}
@@ -151,7 +154,7 @@ export function EditorCanvas() {
                 </div>
                 <p className="mt-1 text-xs font-medium text-[#94A3B8]">Arraste para adicionar ao editor.</p>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <div className="stable-scroll min-h-0 flex-1 overflow-y-auto p-3">
                 <ModuleList />
               </div>
             </div>
