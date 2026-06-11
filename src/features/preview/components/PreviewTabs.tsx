@@ -49,7 +49,7 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
         className={cn(
           "h-9 rounded-xl px-3.5 text-sm font-semibold leading-none transition-colors duration-200",
           activeTab === "visual"
-            ? "bg-[#2563EB]/88 text-white shadow-none"
+            ? "bg-[#2563EB]/88 text-white shadow-none hover:bg-white/[0.08]"
             : "text-[#D1D5DB] hover:bg-white/[0.08] hover:text-white",
         )}
         type="button"
@@ -67,7 +67,7 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
           className={cn(
             "h-9 rounded-xl px-3.5 text-sm font-semibold leading-none transition-colors duration-200",
             activeTab === "pdf"
-              ? "bg-[#2563EB]/88 text-white shadow-none"
+              ? "bg-[#2563EB]/88 text-white shadow-none hover:bg-white/[0.08]"
               : "text-[#D1D5DB] hover:bg-white/[0.08] hover:text-white",
           )}
           type="button"
@@ -102,7 +102,7 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
         className={cn(
           "inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-sm font-semibold leading-none transition-colors duration-200",
           activeTab === "tex"
-            ? "bg-[#2563EB]/88 text-white shadow-none"
+            ? "bg-[#2563EB]/88 text-white shadow-none hover:bg-white/[0.08]"
             : "text-[#D1D5DB] hover:bg-white/[0.08] hover:text-white",
         )}
         type="button"

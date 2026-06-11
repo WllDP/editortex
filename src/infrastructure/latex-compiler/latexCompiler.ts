@@ -13,6 +13,17 @@ import {
   sanitizeCacheKey,
 } from "./pdfCache";
 
+const knownFileHashes = new Map<string, string>();
+const MAX_PROCESS_OUTPUT_BYTES = 128 * 1024;
+
+interface CachedCompileResult {
+  sourceHash: string;
+  pdfPath: string;
+  previewDir: string;
+}
+
+const compiledPreviewCache = new Map<string, CachedCompileResult>();
+
 export async function compileLatexPreview(
   payload: PreviewCompileRequest,
   session?: CompileSession,
@@ -23,24 +34,60 @@ export async function compileLatexPreview(
   const projectKey = sanitizeCacheKey(payload.projectKey ?? "standalone");
   const previewDir = getPreviewCacheDir(projectKey, compileMode);
   const mainRelativePath = normalizeProjectRelativePath(payload.mainTexPath ?? "main.tex") || "main.tex";
-  const compileRelativePath =
-    compileMode === "preview" ? createPreviewTexPath(mainRelativePath, payload.revision) : mainRelativePath;
+  const compileRelativePath = compileMode === "preview" ? createPreviewTexPath(mainRelativePath) : mainRelativePath;
   const texPath = path.join(previewDir, compileRelativePath);
+  const sourceHash = createHash(Buffer.from(tex, "utf8"));
+  const compileCacheKey = createCompileCacheKey(projectKey, compileMode);
+  const cachedCompile = compiledPreviewCache.get(compileCacheKey);
+
+  if (compileMode === "preview" && cachedCompile?.sourceHash === sourceHash) {
+    if (await isExistingFile(cachedCompile.pdfPath)) {
+      const totalMs = performance.now() - totalStartedAt;
+      const diagnostics = [
+        `Cache de compilacao: ${cachedCompile.previewDir}`,
+        "PDF reutilizado do cache em memoria; TEX efetivo nao mudou.",
+        `Tempo total backend preview: ${totalMs.toFixed(1)}ms.`,
+      ];
+      console.info(
+        `[EditorTex perf] cache hit memoria PDF: ${totalMs.toFixed(1)}ms | revisao=${payload.revision ?? "-"} | modo=${compileMode}`,
+      );
+      return {
+        pdfPath: cachedCompile.pdfPath,
+        pdfUrl: createPreviewPdfUrl(
+          projectKey,
+          compileMode,
+          cachedCompile.pdfPath,
+          cachedCompile.previewDir,
+          payload.revision,
+        ),
+        revision: payload.revision,
+        diagnostics,
+      };
+    }
+
+    compiledPreviewCache.delete(compileCacheKey);
+  }
 
   const writeStartedAt = performance.now();
   await fs.mkdir(path.dirname(texPath), { recursive: true });
-  await writeTextIfChanged(texPath, tex);
+  const texChanged = await writeTextIfChanged(texPath, tex);
 
-  const diagnostics = await writeProjectFiles(previewDir, payload.projectFiles ?? [], mainRelativePath);
-  await removeGeneratedLatexArtifacts(compileDirFromTexPath(texPath), path.basename(texPath, path.extname(texPath)));
+  const projectWriteResult = await writeProjectFiles(previewDir, payload.projectFiles ?? [], mainRelativePath);
+  const diagnostics = projectWriteResult.diagnostics;
+  if (compileMode !== "preview") {
+    await removeGeneratedLatexArtifacts(compileDirFromTexPath(texPath), path.basename(texPath, path.extname(texPath)));
+  }
   const writeMs = performance.now() - writeStartedAt;
   const compileDir = path.dirname(texPath);
   const compileTexPath = path.basename(texPath);
+  const sourceChanged = texChanged || projectWriteResult.changed;
 
   diagnostics.push(`Cache de compilacao: ${previewDir}`);
   if (compileMode === "preview") {
     diagnostics.push(
-      "Preview rapido: compilador direto, duas passadas para atualizar sumario, com flag \\fastpreviewtrue.",
+      requiresOverleafLikeCompile(tex)
+        ? "Preview fiel otimizado: latexmk com XeLaTeX e cache de auxiliares persistente."
+        : "Preview rapido otimizado: compilador direto, cache de auxiliares persistente e flag \\fastpreviewtrue.",
     );
   }
   diagnostics.push(`Tempo escrita temporarios: ${writeMs.toFixed(1)}ms.`);
@@ -48,13 +95,38 @@ export async function compileLatexPreview(
     `[EditorTex perf] escrever temporarios: ${writeMs.toFixed(1)}ms | revisao=${payload.revision ?? "-"} | modo=${compileMode}`,
   );
 
+  if (compileMode === "preview" && !sourceChanged) {
+    const cachedPdfPath = await findLatexOutputPdf(previewDir, texPath, 0);
+    if (cachedPdfPath) {
+      const totalMs = performance.now() - totalStartedAt;
+      diagnostics.push("PDF reutilizado do cache; TEX e assets nao mudaram.");
+      diagnostics.push(`Tempo total backend preview: ${totalMs.toFixed(1)}ms.`);
+      console.info(
+        `[EditorTex perf] cache hit PDF: ${totalMs.toFixed(1)}ms | revisao=${payload.revision ?? "-"} | modo=${compileMode}`,
+      );
+      compiledPreviewCache.set(compileCacheKey, {
+        sourceHash,
+        pdfPath: cachedPdfPath,
+        previewDir,
+      });
+      return {
+        pdfPath: cachedPdfPath,
+        pdfUrl: createPreviewPdfUrl(projectKey, compileMode, cachedPdfPath, previewDir, payload.revision),
+        revision: payload.revision,
+        diagnostics,
+      };
+    }
+  }
+
   const compileStartedAt = performance.now();
   const compileStartedWallTime = Date.now();
   for (const attempt of createLatexAttempts(tex, compileTexPath, compileDir, compileMode)) {
     const result = await attempt(session);
     diagnostics.push(...result.diagnostics);
 
-    const pdfPath = result.success ? await findCompiledPdf(previewDir, texPath, compileStartedWallTime) : undefined;
+    const pdfPath = result.success
+      ? await findLatexOutputPdf(previewDir, texPath, sourceChanged ? compileStartedWallTime : 0)
+      : undefined;
     if (pdfPath) {
       const compileMs = performance.now() - compileStartedAt;
       const totalMs = performance.now() - totalStartedAt;
@@ -63,6 +135,13 @@ export async function compileLatexPreview(
       console.info(
         `[EditorTex perf] compilacao LaTeX: ${compileMs.toFixed(1)}ms | total=${totalMs.toFixed(1)}ms | revisao=${payload.revision ?? "-"} | modo=${compileMode}`,
       );
+      if (compileMode === "preview") {
+        compiledPreviewCache.set(compileCacheKey, {
+          sourceHash,
+          pdfPath,
+          previewDir,
+        });
+      }
       return {
         pdfPath,
         pdfUrl: createPreviewPdfUrl(projectKey, compileMode, pdfPath, previewDir, payload.revision),
@@ -82,6 +161,7 @@ export async function compileLatexPreview(
 
 async function writeProjectFiles(root: string, files: PreviewProjectFilePayload[], mainRelativePath: string) {
   const diagnostics: string[] = [];
+  let changed = false;
 
   for (const file of files) {
     if (file.kind === "pdf" || file.kind === "auxiliary") {
@@ -101,13 +181,13 @@ async function writeProjectFiles(root: string, files: PreviewProjectFilePayload[
 
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     if (file.content !== undefined) {
-      await writeTextIfChanged(targetPath, file.content);
+      changed = (await writeTextIfChanged(targetPath, file.content)) || changed;
     } else if (file.binaryBase64) {
-      await writeBufferIfChanged(targetPath, Buffer.from(file.binaryBase64, "base64"));
+      changed = (await writeBufferIfChanged(targetPath, Buffer.from(file.binaryBase64, "base64"))) || changed;
     }
   }
 
-  return diagnostics;
+  return { diagnostics, changed };
 }
 
 async function removeGeneratedLatexArtifacts(directory: string, stem: string) {
@@ -156,10 +236,33 @@ function createLatexAttempts(
 ) {
   if (requiresUnicodeEngine(tex)) {
     if (compileMode === "preview") {
+      if (requiresOverleafLikeCompile(tex)) {
+        return [
+          (session?: CompileSession) =>
+            runLatexCommand("latexmk", createLatexmkArgs("xelatex", compileTexPath), compileDir, session),
+          (session?: CompileSession) =>
+            runLatexCommandPasses(
+              "xelatex",
+              ["-interaction=nonstopmode", "-halt-on-error", compileTexPath],
+              compileDir,
+              session,
+              2,
+            ),
+          (session?: CompileSession) =>
+            runLatexCommandPasses(
+              "lualatex",
+              ["-interaction=nonstopmode", "-halt-on-error", compileTexPath],
+              compileDir,
+              session,
+              2,
+            ),
+        ];
+      }
+
       return [
         (session?: CompileSession) =>
           runLatexCommandPasses(
-            "lualatex",
+            "xelatex",
             ["-interaction=nonstopmode", "-halt-on-error", compileTexPath],
             compileDir,
             session,
@@ -167,7 +270,7 @@ function createLatexAttempts(
           ),
         (session?: CompileSession) =>
           runLatexCommandPasses(
-            "xelatex",
+            "lualatex",
             ["-interaction=nonstopmode", "-halt-on-error", compileTexPath],
             compileDir,
             session,
@@ -178,12 +281,11 @@ function createLatexAttempts(
 
     return [
       (session?: CompileSession) =>
-        runLatexCommand(
-          "latexmk",
-          ["-lualatex", "-interaction=nonstopmode", "-halt-on-error", compileTexPath],
-          compileDir,
-          session,
-        ),
+        runLatexCommand("latexmk", createLatexmkArgs("xelatex", compileTexPath), compileDir, session),
+      (session?: CompileSession) =>
+        runLatexCommand("xelatex", ["-interaction=nonstopmode", "-halt-on-error", compileTexPath], compileDir, session),
+      (session?: CompileSession) =>
+        runLatexCommand("latexmk", createLatexmkArgs("lualatex", compileTexPath), compileDir, session),
       (session?: CompileSession) =>
         runLatexCommand(
           "lualatex",
@@ -191,15 +293,6 @@ function createLatexAttempts(
           compileDir,
           session,
         ),
-      (session?: CompileSession) =>
-        runLatexCommand(
-          "latexmk",
-          ["-xelatex", "-interaction=nonstopmode", "-halt-on-error", compileTexPath],
-          compileDir,
-          session,
-        ),
-      (session?: CompileSession) =>
-        runLatexCommand("xelatex", ["-interaction=nonstopmode", "-halt-on-error", compileTexPath], compileDir, session),
     ];
   }
 
@@ -218,19 +311,40 @@ function createLatexAttempts(
 
   return [
     (session?: CompileSession) =>
-      runLatexCommand(
-        "latexmk",
-        ["-pdf", "-interaction=nonstopmode", "-halt-on-error", compileTexPath],
-        compileDir,
-        session,
-      ),
+      runLatexCommand("latexmk", createLatexmkArgs("pdflatex", compileTexPath), compileDir, session),
     (session?: CompileSession) =>
       runLatexCommand("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", compileTexPath], compileDir, session),
   ];
 }
 
+function createLatexmkArgs(compiler: "xelatex" | "lualatex" | "pdflatex", compileTexPath: string) {
+  const compilerFlag = compiler === "pdflatex" ? "-pdf" : `-${compiler}`;
+
+  return [
+    "-cd",
+    "-jobname=output",
+    "-auxdir=.",
+    "-outdir=.",
+    "-synctex=0",
+    "-interaction=batchmode",
+    "-halt-on-error",
+    "-time",
+    compilerFlag,
+    compileTexPath,
+  ];
+}
+
 function requiresUnicodeEngine(tex: string) {
   return /\\usepackage(?:\[[^\]]*])?\{fontspec\}|\\setmainfont|\\setsansfont|\\setmonofont/.test(tex);
+}
+
+function requiresOverleafLikeCompile(tex: string) {
+  return (
+    requiresUnicodeEngine(tex) &&
+    /\\(?:AddToHook|AddToShipoutPicture(?:BG)?\*?)|\\begin\{tikzpicture\}\[remember picture,overlay]|\\tableofcontents|\\usepackage(?:\[[^\]]*])?\{longtable\}/.test(
+      tex,
+    )
+  );
 }
 
 function createFastPreviewTex(tex: string) {
@@ -243,28 +357,33 @@ function createFastPreviewTex(tex: string) {
   return tex.replace(/(\\documentclass(?:\[[^\]]*])?\{[^}]+\})/, `$1\n${flag}`);
 }
 
-function createPreviewTexPath(mainRelativePath: string, revision: unknown) {
+function createPreviewTexPath(mainRelativePath: string) {
   const parsed = path.parse(mainRelativePath);
-  return path.join(
-    parsed.dir,
-    `${parsed.name}.preview.${sanitizeCacheKey(String(revision ?? Date.now()))}${parsed.ext || ".tex"}`,
-  );
+  return path.join(parsed.dir, `${parsed.name}.preview${parsed.ext || ".tex"}`);
 }
 
 async function writeTextIfChanged(filePath: string, content: string) {
-  if ((await readExistingHash(filePath)) === createHash(Buffer.from(content, "utf8"))) {
-    return;
+  const nextHash = createHash(Buffer.from(content, "utf8"));
+  if (knownFileHashes.get(filePath) === nextHash || (await readExistingHash(filePath)) === nextHash) {
+    knownFileHashes.set(filePath, nextHash);
+    return false;
   }
 
   await fs.writeFile(filePath, content, "utf8");
+  knownFileHashes.set(filePath, nextHash);
+  return true;
 }
 
 async function writeBufferIfChanged(filePath: string, content: Buffer) {
-  if ((await readExistingHash(filePath)) === createHash(content)) {
-    return;
+  const nextHash = createHash(content);
+  if (knownFileHashes.get(filePath) === nextHash || (await readExistingHash(filePath)) === nextHash) {
+    knownFileHashes.set(filePath, nextHash);
+    return false;
   }
 
   await fs.writeFile(filePath, content);
+  knownFileHashes.set(filePath, nextHash);
+  return true;
 }
 
 async function readExistingHash(filePath: string) {
@@ -277,6 +396,37 @@ async function readExistingHash(filePath: string) {
 
 function createHash(content: Buffer) {
   return crypto.createHash("sha1").update(content).digest("hex");
+}
+
+function createCompileCacheKey(projectKey: string, compileMode: string) {
+  return `${projectKey}:${compileMode}`;
+}
+
+async function findLatexOutputPdf(root: string, texPath: string, newerThanMs = 0) {
+  const outputPdfPath = path.join(path.dirname(texPath), "output.pdf");
+  if (await isFreshFile(outputPdfPath, newerThanMs)) {
+    return outputPdfPath;
+  }
+
+  return findCompiledPdf(root, texPath, newerThanMs);
+}
+
+async function isFreshFile(filePath: string, newerThanMs = 0) {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile() && stat.mtimeMs >= newerThanMs - 100;
+  } catch {
+    return false;
+  }
+}
+
+async function isExistingFile(filePath: string) {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
 }
 
 async function runLatexCommandPasses(
@@ -318,8 +468,8 @@ async function runLatexCommand(program: string, args: string[], cwd: string, ses
     if (session) {
       session.currentProcess = child;
     }
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
+    const stdout = createLimitedOutputBuffer();
+    const stderr = createLimitedOutputBuffer();
 
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
@@ -337,8 +487,8 @@ async function runLatexCommand(program: string, args: string[], cwd: string, ses
         session.currentProcess = undefined;
       }
       const elapsed = performance.now() - startedAt;
-      const stdoutText = Buffer.concat(stdout).toString("utf8").trim();
-      const stderrText = Buffer.concat(stderr).toString("utf8").trim();
+      const stdoutText = stdout.toString().trim();
+      const stderrText = stderr.toString().trim();
       const status =
         code === 0
           ? `${program} executado com sucesso em ${elapsed.toFixed(1)}ms.`
@@ -349,6 +499,31 @@ async function runLatexCommand(program: string, args: string[], cwd: string, ses
       });
     });
   });
+}
+
+function createLimitedOutputBuffer() {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let truncated = false;
+
+  return {
+    push(chunk: Buffer) {
+      if (size >= MAX_PROCESS_OUTPUT_BYTES) {
+        truncated = true;
+        return;
+      }
+
+      const remaining = MAX_PROCESS_OUTPUT_BYTES - size;
+      const nextChunk = chunk.byteLength > remaining ? chunk.subarray(0, remaining) : chunk;
+      chunks.push(nextChunk);
+      size += nextChunk.byteLength;
+      truncated = truncated || nextChunk.byteLength < chunk.byteLength;
+    },
+    toString() {
+      const value = Buffer.concat(chunks).toString("utf8");
+      return truncated ? `${value}\n...saida truncada para preservar performance...` : value;
+    },
+  };
 }
 
 export function cancelCurrentCompile(session: CompileSession, reason: string) {

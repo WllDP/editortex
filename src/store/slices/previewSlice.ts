@@ -26,6 +26,7 @@ export function createPreviewSlice(set: EditorStoreSet, get: EditorStoreGet): Pr
         state.document,
         state.availableBlocks,
         state.uploadedTemplate?.parsedTemplate,
+        { includeTrackingMarkers: false },
       );
       const texGenerationMs = performance.now() - startedAt;
       console.info(

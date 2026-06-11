@@ -8,11 +8,17 @@ import { assembleDocument } from "@/domain/latex/templateAssembler";
 const MAX_RENDER_CACHE_SIZE = 1000;
 const renderedBlockCache = new Map<string, string>();
 
+interface GenerateLatexOptions {
+  includeTrackingMarkers?: boolean;
+}
+
 export function generateLatexDocument(
   document: DocumentModel,
   definitions: BlockDefinition[],
   template?: ParsedLatexTemplate,
+  options: GenerateLatexOptions = {},
 ): string {
+  const includeTrackingMarkers = options.includeTrackingMarkers ?? true;
   const definitionsById = definitions.reduce<Record<string, BlockDefinition>>((index, definition) => {
     index[definition.id] = definition;
     return index;
@@ -20,7 +26,11 @@ export function generateLatexDocument(
 
   const sortedBlocks = [...document.blocks].sort((a, b) => a.order - b.order);
   const body = sortedBlocks
-    .map((block: BlockInstance) => renderTrackedBlockToLatexCached(block, definitionsById[block.definitionId]))
+    .map((block: BlockInstance) =>
+      includeTrackingMarkers
+        ? renderTrackedBlockToLatexCached(block, definitionsById[block.definitionId])
+        : renderBlockToLatex(block, definitionsById[block.definitionId]),
+    )
     .join("\n\n");
 
   const coverOverrides = getCoverOverrides(sortedBlocks);
@@ -48,13 +58,29 @@ function renderTrackedBlockToLatex(block: BlockInstance, definition?: BlockDefin
     definitionId: block.definitionId,
     type: block.type,
     variableName: block.variableName,
-    data: block.data,
-    blockMetadata: block.metadata,
+    ...(shouldTrackBlockData(block) ? { data: block.data } : {}),
+    blockMetadata: createTrackableBlockMetadata(block.metadata),
   };
 
   return [`% editortex:block ${encodeURIComponent(JSON.stringify(metadata))}`, rendered, "% editortex:endblock"].join(
     "\n",
   );
+}
+
+function shouldTrackBlockData(block: BlockInstance) {
+  return block.type === "custom-cover";
+}
+
+function createTrackableBlockMetadata(metadata: Record<string, unknown>) {
+  const trackableMetadata: Record<string, unknown> = {};
+
+  for (const key of ["placement", "width", "importedFrom"]) {
+    if (metadata[key] !== undefined) {
+      trackableMetadata[key] = metadata[key];
+    }
+  }
+
+  return trackableMetadata;
 }
 
 function createRenderCacheKey(block: BlockInstance, definition?: BlockDefinition) {

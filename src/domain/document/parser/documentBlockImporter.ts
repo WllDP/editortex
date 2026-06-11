@@ -513,18 +513,46 @@ function appendTextSegments(blocks: BlockInstance[], value: string) {
     .split(/\n\s*\n+/)
     .map((segment) => segment.trim())
     .filter(Boolean);
+  const safeTextSegments: string[] = [];
+
+  const flushSafeTextSegments = () => {
+    if (safeTextSegments.length === 0) {
+      return;
+    }
+
+    appendPlainTextBlock(blocks, safeTextSegments.join("\n\n"));
+    safeTextSegments.length = 0;
+  };
 
   for (const segment of segments) {
     if (isBlockPreparatoryCommand(segment)) {
       continue;
     }
 
+    if (containsListEnvironment(segment)) {
+      flushSafeTextSegments();
+      const listText = convertListEnvironmentToText(segment);
+      if (listText) {
+        appendPlainTextBlock(blocks, listText);
+      }
+      continue;
+    }
+
     if (containsUnsafeLatexCommand(segment)) {
+      flushSafeTextSegments();
       appendRawBlock(blocks, segment);
     } else {
-      appendPlainTextBlock(blocks, segment);
+      safeTextSegments.push(segment);
     }
   }
+
+  flushSafeTextSegments();
+}
+
+function containsListEnvironment(value: string) {
+  return /\\begin\s*\{\s*(itemize|enumerate)\s*\}|\\end\s*\{\s*(itemize|enumerate)\s*\}|\\item(?:\[[^\]]*])?/.test(
+    value,
+  );
 }
 
 function appendPlainTextBlock(blocks: BlockInstance[], text: string) {
@@ -582,9 +610,6 @@ function appendAttachedImageBlock(blocks: BlockInstance[], figureLatex: string) 
     },
     metadata: {
       importedFrom: "figure",
-      originalLatex: figureLatex,
-      placement: extractFigurePlacement(figureLatex),
-      width: extractIncludeGraphicsWidth(figureLatex),
     },
   });
 }

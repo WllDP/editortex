@@ -51,10 +51,8 @@ function renderAttachedImageBlock(block: BlockInstance) {
     `\\begin{figure}${placement}`,
     "\\centering",
     title ? `\\caption{${escapeLatex(title)}}` : "",
-    image ? `\\makebox[\\linewidth][c]{\\includegraphics[${width}]{${image}}}\\par` : "",
-    escapedSubtitle
-      ? `\\vspace{0.35em}\\makebox[\\linewidth][c]{\\parbox{0.9\\linewidth}{\\centering\\footnotesize ${escapedSubtitle}}}\\par`
-      : "",
+    image ? `\\includegraphics[${width}]{${image}}` : "",
+    escapedSubtitle ? `\\begin{center}\\footnotesize ${escapedSubtitle}\\end{center}` : "",
     "\\end{figure}",
   ]
     .filter(Boolean)
@@ -67,13 +65,17 @@ function renderFinalImageBlock(block: BlockInstance) {
     return "";
   }
 
+  if (block.variableName === "PaginaFinalImagem") {
+    return `\\PaginaFinalImagem{${image}}`;
+  }
+
   return [
     "\\clearpage",
     "\\RodapeAtivofalse",
     "\\thispagestyle{empty}",
     "\\begin{tikzpicture}[remember picture,overlay]",
     "  \\node[anchor=center,inner sep=0pt] at (current page.center)",
-    `  {\\includegraphics[width=\\paperwidth,height=\\paperheight,keepaspectratio]{${image}}};`,
+    `  {\\includegraphics[width=\\paperwidth,height=\\paperheight]{${image}}};`,
     "\\end{tikzpicture}",
     "\\clearpage",
     "\\RodapeAtivotrue",
