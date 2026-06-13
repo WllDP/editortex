@@ -263,13 +263,12 @@ export function AppShell() {
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.18, ease: smoothEase }}
-              className="flex min-h-11 w-64 items-center gap-2.5 rounded-xl border border-[#60A5FA]/45 bg-[#2563EB]/90 px-3 py-2 text-left text-sm font-semibold leading-none text-white shadow-[0_22px_58px_rgba(37,99,235,0.38)] backdrop-blur-2xl"
+              className="relative grid aspect-square w-28 place-items-center rounded-xl border border-[#60A5FA]/45 bg-[#2563EB]/90 p-3 text-center text-sm font-semibold leading-tight text-white shadow-[0_22px_58px_rgba(37,99,235,0.38)] backdrop-blur-2xl"
             >
-              <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/15 text-xs">::</span>
-              <span className="min-w-0 flex-1 truncate">{draggedLibraryBlock.name}</span>
-              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-[#FF4D9D]/35 bg-[#FF4D9D]/75 px-2 text-xs font-semibold leading-none text-white">
-                {draggedLibraryBlock.fields.length}
+              <span className="absolute left-3 top-3 grid h-5 w-5 place-items-center rounded-md bg-white/15 text-[10px] text-white/80">
+                ::
               </span>
+              <span className="line-clamp-3 max-w-full text-balance break-words px-1">{draggedLibraryBlock.name}</span>
             </motion.div>
           ) : null}
         </DragOverlay>

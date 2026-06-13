@@ -3,7 +3,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 
 export function getPreviewCacheDir(projectKey: string, mode: string) {
-  return path.join(os.tmpdir(), "editortex-preview-cache", `${sanitizeCacheKey(projectKey)}-${sanitizeCacheKey(mode)}`);
+  return path.join(getPreviewCacheRoot(), `${sanitizeCacheKey(projectKey)}-${sanitizeCacheKey(mode)}`);
+}
+
+export function getPreviewCacheRoot() {
+  return path.join(os.tmpdir(), "editortex-preview-cache");
 }
 
 export function createPreviewPdfUrl(

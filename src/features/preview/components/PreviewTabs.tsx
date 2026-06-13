@@ -65,10 +65,10 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
       >
         <button
           className={cn(
-            "h-9 rounded-xl px-3.5 text-sm font-semibold leading-none transition-colors duration-200",
+            "rounded-xl px-3.5 text-sm font-semibold leading-none transition-colors duration-200",
             activeTab === "pdf"
-              ? "bg-[#2563EB]/88 text-white shadow-none hover:bg-white/[0.08]"
-              : "text-[#D1D5DB] hover:bg-white/[0.08] hover:text-white",
+              ? "h-7 bg-[#2563EB]/88 text-white shadow-none hover:bg-white/[0.08]"
+              : "h-9 text-[#D1D5DB] hover:bg-white/[0.08] hover:text-white",
           )}
           type="button"
           onClick={() => onChange("pdf")}
@@ -82,7 +82,7 @@ export function PreviewTabs({ activeTab, canUpdatePdf, isCompiling, onChange, on
           )}
           aria-hidden={activeTab !== "pdf"}
         >
-          <div className="min-w-0 overflow-hidden">
+          <div className="flex h-9 min-w-0 items-center overflow-hidden">
             <Button
               variant="ghost"
               size="icon"

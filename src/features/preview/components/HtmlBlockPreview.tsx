@@ -4,11 +4,17 @@ import { HtmlPreviewPage } from "@/features/preview/components/HtmlPreviewPage";
 import {
   createAssetLookup,
   createDefinitionsById,
-  createTocEntries,
+  createHeadingNumberLookup,
+  createTocEntriesWithPages,
+  findAssetUrl,
+  getPreviewSourceBlockId,
+  isPreviewSplitContinuation,
   paginateBlocks,
 } from "@/features/preview/components/htmlPreviewModel";
 import { usePreviewScale } from "@/features/preview/hooks/usePreviewScale";
 import { usePreviewSelection } from "@/features/preview/hooks/usePreviewSelection";
+import { resolveLatexPreviewFontFamily } from "@/features/preview/lib/latexPreviewFont";
+import { resolveLatexPreviewLayout } from "@/features/preview/lib/latexPreviewLayout";
 import type { BlockDefinition, BlockInstance } from "@/types/blocks";
 import type { UploadedTemplate } from "@/types/latex";
 
@@ -33,8 +39,17 @@ export function HtmlBlockPreview({
   const hasPreviewContent = sortedBlocks.length > 0;
   const definitionsById = useMemo(() => createDefinitionsById(definitions), [definitions]);
   const assetsByName = useMemo(() => createAssetLookup(uploadedTemplate), [uploadedTemplate]);
+  const previewFontFamily = useMemo(() => resolveLatexPreviewFontFamily(uploadedTemplate), [uploadedTemplate]);
+  const previewLayout = useMemo(() => resolveLatexPreviewLayout(uploadedTemplate), [uploadedTemplate]);
   const pages = useMemo(() => paginateBlocks(sortedBlocks, definitionsById), [definitionsById, sortedBlocks]);
-  const tocEntries = useMemo(() => createTocEntries(sortedBlocks, definitionsById), [definitionsById, sortedBlocks]);
+  const headingNumberByBlockId = useMemo(
+    () => createHeadingNumberLookup(sortedBlocks, definitionsById),
+    [definitionsById, sortedBlocks],
+  );
+  const tocEntries = useMemo(
+    () => createTocEntriesWithPages(sortedBlocks, definitionsById, pages),
+    [definitionsById, pages, sortedBlocks],
+  );
   const pageScale = usePreviewScale(viewportRef, hasPreviewContent);
   const registerBlockRef = usePreviewSelection(viewportRef, selectedBlockId, pageScale);
 
@@ -69,22 +84,92 @@ export function HtmlBlockPreview({
     >
       <div className="mx-auto flex w-max flex-col gap-6">
         {pages.map((page, pageIndex) => (
-          <HtmlPreviewPage key={page.id} pageNumber={pageIndex + 1} overflowHint={page.overflowHint} scale={pageScale}>
-            {page.blocks.map((block) => (
-              <HtmlPreviewBlock
-                key={block.id}
-                assetsByName={assetsByName}
-                block={block}
-                definition={definitionsById[block.definitionId]}
-                selected={block.id === highlightedBlockId}
-                tocEntries={tocEntries}
-                onSelectBlock={onSelectBlock}
-                registerBlockRef={registerBlockRef(block.id)}
-              />
-            ))}
+          <HtmlPreviewPage
+            key={page.id}
+            backgroundImageUrl={getPageBackgroundUrl(page.blocks, definitionsById, previewLayout, assetsByName)}
+            backgroundMirrored={isPageBackgroundMirrored(page.blocks, definitionsById, previewLayout)}
+            fontFamily={previewFontFamily}
+            footerImageUrl={getPageFooterUrl(page.blocks, definitionsById, previewLayout, assetsByName)}
+            pageNumber={pageIndex + 1}
+            overflowHint={page.overflowHint}
+            scale={pageScale}
+          >
+            {page.blocks.map((block) => {
+              const sourceBlockId = getPreviewSourceBlockId(block);
+              return (
+                <HtmlPreviewBlock
+                  key={block.id}
+                  assetsByName={assetsByName}
+                  block={block}
+                  definition={definitionsById[block.definitionId]}
+                  headingNumber={headingNumberByBlockId.get(sourceBlockId)}
+                  previewLayout={previewLayout}
+                  selectBlockId={sourceBlockId}
+                  selected={sourceBlockId === highlightedBlockId}
+                  tocEntries={tocEntries}
+                  onSelectBlock={onSelectBlock}
+                  registerBlockRef={isPreviewSplitContinuation(block) ? undefined : registerBlockRef(sourceBlockId)}
+                />
+              );
+            })}
           </HtmlPreviewPage>
         ))}
       </div>
     </div>
   );
+}
+
+function getPageFooterUrl(
+  blocks: BlockInstance[],
+  definitionsById: Record<string, BlockDefinition>,
+  previewLayout: ReturnType<typeof resolveLatexPreviewLayout>,
+  assetsByName: Map<string, string>,
+) {
+  if (!previewLayout.pageFooterImage || pageDisablesFooter(blocks, definitionsById)) {
+    return undefined;
+  }
+
+  return findAssetUrl(assetsByName, previewLayout.pageFooterImage);
+}
+
+function pageDisablesFooter(blocks: BlockInstance[], definitionsById: Record<string, BlockDefinition>) {
+  return blocks.some((block) => {
+    const variableName = getVariableName(block, definitionsById);
+    return block.type === "custom-cover" || block.type === "final-image" || variableName === "specialchapter";
+  });
+}
+
+function getPageBackgroundUrl(
+  blocks: BlockInstance[],
+  definitionsById: Record<string, BlockDefinition>,
+  previewLayout: ReturnType<typeof resolveLatexPreviewLayout>,
+  assetsByName: Map<string, string>,
+) {
+  if (!previewLayout.chapterBackgroundImage || !pageHasChapter(blocks, definitionsById)) {
+    return undefined;
+  }
+
+  return findAssetUrl(assetsByName, previewLayout.chapterBackgroundImage);
+}
+
+function isPageBackgroundMirrored(
+  blocks: BlockInstance[],
+  definitionsById: Record<string, BlockDefinition>,
+  previewLayout: ReturnType<typeof resolveLatexPreviewLayout>,
+) {
+  return (
+    previewLayout.chapterBackgroundMirrored &&
+    blocks.some((block) => getVariableName(block, definitionsById) === "specialchapter")
+  );
+}
+
+function pageHasChapter(blocks: BlockInstance[], definitionsById: Record<string, BlockDefinition>) {
+  return blocks.some((block) => {
+    const variableName = getVariableName(block, definitionsById);
+    return variableName === "chapter" || variableName === "specialchapter" || variableName === "tableofcontents";
+  });
+}
+
+function getVariableName(block: BlockInstance, definitionsById: Record<string, BlockDefinition>) {
+  return definitionsById[block.definitionId]?.variableName ?? block.variableName;
 }

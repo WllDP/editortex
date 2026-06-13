@@ -39,7 +39,7 @@ export function ExportMenu({
         ? createPortal(
             <div
               ref={menuRef}
-              className="fixed z-[100] w-44 rounded-2xl border border-white/14 bg-[#111936]/92 p-1.5 shadow-[0_22px_58px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
+              className="fixed z-[100] w-44 rounded-2xl border border-[#2F3B59] bg-[#111936] p-1.5 text-white shadow-[0_18px_48px_rgba(0,0,0,0.52)]"
               style={{ top: position.top, right: position.right }}
             >
               <ExportMenuItem icon={FileText} label="Baixar TEX" onClick={onExportTex} />
@@ -57,7 +57,7 @@ function ExportMenuItem({ icon: Icon, label, onClick }: { icon: typeof FileText;
   return (
     <button
       type="button"
-      className="flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-semibold leading-none text-[#E5E7EB] transition-colors duration-200 hover:bg-white/[0.1] hover:text-white"
+      className="flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-semibold leading-none text-white transition-colors duration-200 hover:bg-[#243153]"
       onClick={onClick}
     >
       <Icon className="h-4 w-4 text-[#22D3EE]" />

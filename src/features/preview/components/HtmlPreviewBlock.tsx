@@ -1,12 +1,23 @@
 import type { ReactNode } from "react";
 import type { BlockDefinition, BlockInstance } from "@/types/blocks";
-import { getBaseName, looksLikeTable, type TocEntry } from "@/features/preview/components/htmlPreviewModel";
+import { lexicalTextDataKey } from "@/types/editor";
+import {
+  findAssetUrl,
+  getBaseName,
+  looksLikeTable,
+  type TocEntry,
+} from "@/features/preview/components/htmlPreviewModel";
+import { LexicalRichTextPreview } from "@/features/preview/components/LexicalRichTextPreview";
+import type { LatexPreviewLayout } from "@/features/preview/lib/latexPreviewLayout";
 import { cn } from "@/utils/cn";
 
 interface HtmlPreviewBlockProps {
   assetsByName: Map<string, string>;
   block: BlockInstance;
   definition?: BlockDefinition;
+  headingNumber?: string;
+  previewLayout: LatexPreviewLayout;
+  selectBlockId?: string;
   selected: boolean;
   tocEntries: TocEntry[];
   onSelectBlock?: (blockId: string) => void;
@@ -17,12 +28,16 @@ export function HtmlPreviewBlock({
   assetsByName,
   block,
   definition,
+  headingNumber,
+  previewLayout,
+  selectBlockId,
   selected,
   tocEntries,
   onSelectBlock,
   registerBlockRef,
 }: HtmlPreviewBlockProps) {
   const variableName = definition?.variableName ?? block.variableName;
+  const isFullBleed = isFullBleedPreviewBlock(block, variableName);
 
   if (variableName === "newpage") {
     return (
@@ -32,7 +47,7 @@ export function HtmlPreviewBlock({
           "my-8 border-t border-dashed border-zinc-300 pt-2 text-center text-[11px] text-zinc-400 transition-colors duration-300",
           selected && "bg-[#DBEAFE]/75",
         )}
-        onClick={() => onSelectBlock?.(block.id)}
+        onClick={() => onSelectBlock?.(selectBlockId ?? block.id)}
       >
         Quebra de pagina
       </div>
@@ -43,12 +58,15 @@ export function HtmlPreviewBlock({
     <section
       ref={registerBlockRef}
       className={cn(
-        "group relative -mx-3 rounded-md px-3 py-1 transition-colors duration-300",
-        selected ? "bg-[#DBEAFE]/75" : "hover:bg-[#E0F2FE]",
+        "group relative transition-colors duration-300",
+        isFullBleed ? "-mx-[84px] -my-[74px] h-[1123px] overflow-hidden" : "-mx-3 rounded-md px-3 py-1",
+        selected && !isFullBleed && "bg-[#DBEAFE]/75",
+        !selected && !isFullBleed && "hover:bg-[#E0F2FE]",
+        selected && isFullBleed && "ring-2 ring-[#60A5FA]/70 ring-inset",
       )}
-      onClick={() => onSelectBlock?.(block.id)}
+      onClick={() => onSelectBlock?.(selectBlockId ?? block.id)}
     >
-      {renderBlockContent(block, definition, assetsByName, tocEntries)}
+      {renderBlockContent(block, definition, assetsByName, tocEntries, previewLayout, headingNumber)}
     </section>
   );
 }
@@ -58,14 +76,25 @@ function renderBlockContent(
   definition: BlockDefinition | undefined,
   assetsByName: Map<string, string>,
   tocEntries: TocEntry[],
+  previewLayout: LatexPreviewLayout,
+  headingNumber?: string,
 ) {
   const variableName = definition?.variableName ?? block.variableName;
 
   if (block.type === "custom-cover") {
-    return <CoverPreview assetsByName={assetsByName} block={block} />;
+    return <CoverPreview assetsByName={assetsByName} block={block} previewLayout={previewLayout} />;
   }
 
   if (block.type === "plain-text") {
+    if (block.data[lexicalTextDataKey]?.trim()) {
+      return (
+        <LexicalRichTextPreview
+          lexicalJson={block.data[lexicalTextDataKey]}
+          fallback={<ParagraphPreview>{block.data.text}</ParagraphPreview>}
+        />
+      );
+    }
+
     return <ParagraphPreview>{block.data.text}</ParagraphPreview>;
   }
 
@@ -94,11 +123,24 @@ function renderBlockContent(
     definition?.fields.map((field) => block.data[field.id] ?? "").filter(Boolean) ?? Object.values(block.data);
   const [primary, ...rest] = values;
 
+  if (variableName === "specialchapter") {
+    return (
+      <SpecialChapterPreview
+        assetsByName={assetsByName}
+        previewLayout={previewLayout}
+        text={rest.join("\n\n")}
+        title={primary || definition?.name || "Capitulo"}
+      />
+    );
+  }
+
   if (variableName === "chapter" || variableName === "specialchapter") {
+    const chapterIcon = findAssetUrl(assetsByName, previewLayout.chapterTitleIconImage);
     return (
       <div className="mb-7 mt-4">
-        <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500">Capitulo</p>
-        <h1 className="border-b-2 border-zinc-950 pb-3 text-[28px] font-bold leading-tight text-zinc-950">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">Capitulo</p>
+        <h1 className="flex items-center gap-3 pb-3 text-[28px] font-normal leading-tight text-zinc-950">
+          {chapterIcon ? <img className="h-[0.9em] w-auto object-contain" src={chapterIcon} alt="" /> : null}
           {primary || definition?.name || "Capitulo"}
         </h1>
         {rest.length ? <ParagraphPreview className="mt-5">{rest.join("\n\n")}</ParagraphPreview> : null}
@@ -108,26 +150,38 @@ function renderBlockContent(
 
   if (variableName === "section") {
     return (
-      <h2 className="mb-4 mt-7 border-b border-zinc-300 pb-2 text-[21px] font-bold leading-tight">
-        {primary || "Secao"}
+      <h2 className="mb-5 mt-8 flex items-baseline gap-[1em] pl-[1.5em] text-[21px] font-normal leading-tight text-red-600">
+        {headingNumber ? <span className="tabular-nums">{headingNumber}</span> : null}
+        <span>{primary || "Secao"}</span>
       </h2>
     );
   }
 
   if (variableName === "subsection") {
     return (
-      <h3 className="mb-3 mt-5 text-[17px] font-bold leading-tight">{primary || definition?.name || "Subsecao"}</h3>
+      <h3 className="mb-4 mt-6 flex items-baseline gap-[1em] pl-[4em] text-[17px] font-normal leading-tight text-red-600">
+        {headingNumber ? <span className="tabular-nums">{headingNumber}</span> : null}
+        <span>{primary || definition?.name || "Subsecao"}</span>
+      </h3>
     );
   }
 
   if (variableName === "subsubsection") {
     return (
-      <h4 className="mb-2 mt-4 text-[15px] font-bold leading-tight">{primary || definition?.name || "Subsecao"}</h4>
+      <h4 className="mb-3 mt-5 flex items-baseline gap-[1em] pl-[6em] text-[15px] font-normal leading-tight text-red-600">
+        {headingNumber ? <span className="tabular-nums">{headingNumber}</span> : null}
+        <span>{primary || definition?.name || "Subsecao"}</span>
+      </h4>
     );
   }
 
   if (variableName === "tableofcontents") {
-    return <TableOfContentsPreview entries={tocEntries} />;
+    return (
+      <TableOfContentsPreview
+        entries={tocEntries}
+        titleIconUrl={findAssetUrl(assetsByName, previewLayout.chapterTitleIconImage)}
+      />
+    );
   }
 
   if (looksLikeTable(values)) {
@@ -144,26 +198,46 @@ function renderBlockContent(
   );
 }
 
-function CoverPreview({ assetsByName, block }: { assetsByName: Map<string, string>; block: BlockInstance }) {
-  const background = assetsByName.get("fundo_titulo.png") ?? assetsByName.get("cabeca.png");
-  const logo = assetsByName.get("icone.png");
+function CoverPreview({
+  assetsByName,
+  block,
+  previewLayout,
+}: {
+  assetsByName: Map<string, string>;
+  block: BlockInstance;
+  previewLayout: LatexPreviewLayout;
+}) {
+  const header = findAssetUrl(assetsByName, previewLayout.coverHeaderImage);
+  const logo = findAssetUrl(assetsByName, previewLayout.coverLogoImage);
 
   return (
-    <div className="-mx-[84px] -mt-[74px] mb-8 flex min-h-[1123px] flex-col justify-between overflow-hidden">
-      {background ? (
-        <img className="absolute inset-x-0 top-0 h-full w-full object-cover" src={background} alt="" />
+    <div className="relative h-full overflow-hidden bg-white">
+      {header ? (
+        <img
+          className="absolute left-1/2 top-[38px] h-auto w-[715px] -translate-x-1/2 object-contain"
+          src={header}
+          alt=""
+        />
       ) : null}
-      <div className="relative z-[1] px-[84px] pt-[82px]" />
-      <div className="relative z-[1] grid grid-cols-[1fr_auto] items-center gap-8 px-[84px] pb-[420px]">
-        <div>
-          <h1 className="max-w-[520px] text-[30px] font-bold leading-tight text-zinc-950">
-            {block.data.title || "Titulo principal"}
-          </h1>
-          {block.data.subtitle ? (
-            <p className="mt-4 text-[17px] leading-7 text-zinc-800">{block.data.subtitle}</p>
-          ) : null}
-        </div>
-        {logo ? <img className="h-20 w-auto object-contain" src={logo} alt="" /> : null}
+      <div className="absolute left-[113px] top-[378px] z-[2]">
+        <h1 className="max-w-[520px] text-[32px] font-bold leading-[1.16] text-zinc-950">
+          {block.data.title || "Titulo principal"}
+        </h1>
+        {block.data.subtitle ? (
+          <p className="mt-[22px] text-[19px] leading-[1.28] text-zinc-800">{block.data.subtitle}</p>
+        ) : null}
+      </div>
+      {logo ? (
+        <img className="absolute left-[548px] top-[362px] z-[2] h-[76px] w-auto object-contain" src={logo} alt="" />
+      ) : null}
+      <div className="absolute inset-x-0 bottom-0 z-[1] h-[113px] bg-black">
+        <a
+          className="absolute bottom-[38px] left-1/2 -translate-x-1/2 text-center text-[16px] leading-none text-white"
+          href="https://www.testingcompany.com.br"
+          onClick={(event) => event.preventDefault()}
+        >
+          www.testingcompany.com.br
+        </a>
       </div>
     </div>
   );
@@ -171,7 +245,7 @@ function CoverPreview({ assetsByName, block }: { assetsByName: Map<string, strin
 
 function ImagePreview({ assetsByName, block }: { assetsByName: Map<string, string>; block: BlockInstance }) {
   const imageValue = block.data.image?.trim() ?? "";
-  const imageUrl = assetsByName.get(imageValue) ?? assetsByName.get(getBaseName(imageValue));
+  const imageUrl = findAssetUrl(assetsByName, imageValue, getBaseName(imageValue));
 
   return (
     <figure className="my-5 text-center">
@@ -198,10 +272,10 @@ function ImagePreview({ assetsByName, block }: { assetsByName: Map<string, strin
 
 function FinalImagePreview({ assetsByName, block }: { assetsByName: Map<string, string>; block: BlockInstance }) {
   const imageValue = block.data.image?.trim() ?? "";
-  const imageUrl = assetsByName.get(imageValue) ?? assetsByName.get(getBaseName(imageValue));
+  const imageUrl = findAssetUrl(assetsByName, imageValue, getBaseName(imageValue));
 
   return (
-    <div className="-mx-[84px] -my-[74px] flex h-[1123px] items-center justify-center overflow-hidden bg-zinc-50">
+    <div className="flex h-full items-center justify-center overflow-hidden bg-zinc-50">
       {imageUrl ? (
         <img className="h-full w-full object-contain" src={imageUrl} alt={imageValue || "Imagem final"} />
       ) : (
@@ -213,21 +287,68 @@ function FinalImagePreview({ assetsByName, block }: { assetsByName: Map<string, 
   );
 }
 
-function TableOfContentsPreview({ entries }: { entries: TocEntry[] }) {
+function SpecialChapterPreview({
+  assetsByName,
+  previewLayout,
+  text,
+  title,
+}: {
+  assetsByName: Map<string, string>;
+  previewLayout: LatexPreviewLayout;
+  text: string;
+  title: string;
+}) {
+  const chapterIcon = findAssetUrl(assetsByName, previewLayout.chapterTitleIconImage);
+
+  return (
+    <div className="relative h-full overflow-hidden">
+      <div className="absolute left-[302px] top-[290px] z-[2] flex max-w-[390px] items-center gap-3 text-[32px] font-normal leading-tight text-zinc-950">
+        <span>{title}</span>
+        {chapterIcon ? <img className="h-[0.9em] w-auto object-contain" src={chapterIcon} alt="" /> : null}
+      </div>
+      {text ? (
+        <div className="absolute right-0 top-[340px] z-[2] w-[492px] whitespace-pre-wrap bg-black p-[45px] text-justify text-[15px] leading-[1.55] text-white">
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function isFullBleedPreviewBlock(block: BlockInstance, variableName: string) {
+  return block.type === "custom-cover" || block.type === "final-image" || variableName === "specialchapter";
+}
+
+function TableOfContentsPreview({ entries, titleIconUrl }: { entries: TocEntry[]; titleIconUrl?: string }) {
   return (
     <div className="my-8">
-      <h2 className="mb-5 border-b border-zinc-300 pb-2 text-[24px] font-bold">Sumario</h2>
+      <h2 className="mb-12 flex items-center gap-3 text-[24px] font-normal">
+        {titleIconUrl ? <img className="h-[0.9em] w-auto object-contain" src={titleIconUrl} alt="" /> : null}
+        <span>Sumario</span>
+      </h2>
       {entries.length ? (
-        <ol className="space-y-2 text-[13px]">
-          {entries.map((entry) => (
-            <li
-              key={`${entry.level}-${entry.title}-${entry.index}`}
-              className={cn("flex gap-3", entry.level > 1 && "pl-6 text-zinc-600")}
-            >
-              <span className="min-w-6 text-zinc-400">{entry.index}</span>
-              <span className="flex-1 border-b border-dotted border-zinc-300">{entry.title}</span>
-            </li>
-          ))}
+        <ol className="space-y-[11px] text-[12px] leading-none text-black">
+          {entries.map((entry) => {
+            const isChapter = entry.level === 1;
+            return (
+              <li
+                key={`${entry.level}-${entry.title}-${entry.index}`}
+                className={cn(
+                  "grid grid-cols-[auto_auto_1fr_auto] items-baseline gap-x-2",
+                  isChapter && "font-bold",
+                  entry.level === 2 && "pl-[22px] font-normal",
+                  entry.level >= 3 && "pl-[46px] font-normal",
+                )}
+              >
+                <span className="min-w-[18px] tabular-nums">{entry.index}</span>
+                <span>{entry.title}</span>
+                {isChapter ? <span /> : <span className="mx-1 border-b border-dotted border-black/70" />}
+                <span className={cn("min-w-[20px] text-right tabular-nums", isChapter && "font-bold")}>
+                  {entry.pageNumber ?? ""}
+                </span>
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <p className="text-[13px] text-zinc-500">Sumario gerado no PDF fiel.</p>
@@ -253,7 +374,109 @@ function TableLikePreview({ title, values }: { title?: string; values: string[] 
 }
 
 function ParagraphPreview({ children, className }: { children: ReactNode; className?: string }) {
+  if (typeof children === "string") {
+    const paragraphs = splitPreviewParagraphs(children);
+    return (
+      <>
+        {paragraphs.map((paragraph, index) => (
+          <p
+            key={`${paragraph.slice(0, 24)}-${index}`}
+            className={cn("my-3 text-justify text-[13.5px] leading-[1.72] text-zinc-800", className)}
+            style={{ textIndent: "1.5cm" }}
+          >
+            {renderInlineLatexPreview(paragraph)}
+          </p>
+        ))}
+      </>
+    );
+  }
+
   return (
-    <p className={cn("my-3 whitespace-pre-wrap text-[13.5px] leading-[1.72] text-zinc-800", className)}>{children}</p>
+    <p
+      className={cn("my-3 text-justify text-[13.5px] leading-[1.72] text-zinc-800", className)}
+      style={{ textIndent: "1.5cm" }}
+    >
+      {children}
+    </p>
   );
+}
+
+function splitPreviewParagraphs(value: string) {
+  return value
+    .split(/\n\s*\n+/)
+    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean);
+}
+
+function renderInlineLatexPreview(value: string): ReactNode {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  const commandRegex = /\\(textbf|textit|emph|underline)\s*\{/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = commandRegex.exec(value)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(value.slice(cursor, match.index));
+    }
+
+    const command = match[1];
+    const parsed = readBalancedGroup(value, commandRegex.lastIndex - 1);
+    if (!parsed) {
+      nodes.push(match[0]);
+      cursor = commandRegex.lastIndex;
+      continue;
+    }
+
+    const content = renderInlineLatexPreview(parsed.value);
+    const key = `${command}-${match.index}`;
+    if (command === "textbf") {
+      nodes.push(<strong key={key}>{content}</strong>);
+    } else if (command === "textit" || command === "emph") {
+      nodes.push(<em key={key}>{content}</em>);
+    } else if (command === "underline") {
+      nodes.push(<u key={key}>{content}</u>);
+    }
+
+    cursor = parsed.end;
+    commandRegex.lastIndex = parsed.end;
+  }
+
+  if (cursor < value.length) {
+    nodes.push(value.slice(cursor));
+  }
+
+  return nodes;
+}
+
+function readBalancedGroup(value: string, openBraceIndex: number) {
+  let depth = 0;
+  let groupValue = "";
+
+  for (let index = openBraceIndex; index < value.length; index += 1) {
+    const character = value[index];
+    const previous = value[index - 1];
+
+    if (character === "{" && previous !== "\\") {
+      if (depth > 0) {
+        groupValue += character;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (character === "}" && previous !== "\\") {
+      depth -= 1;
+      if (depth === 0) {
+        return { value: groupValue, end: index + 1 };
+      }
+      groupValue += character;
+      continue;
+    }
+
+    if (depth > 0) {
+      groupValue += character;
+    }
+  }
+
+  return undefined;
 }

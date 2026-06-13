@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import type { CompileSession, PreviewCompileRequest, PreviewCompileResult, PreviewProjectFilePayload } from "./types";
+import type { ProjectManifest } from "./projectManifest";
 import { resolveLatexProgram } from "./toolchainResolver";
 import {
   createPreviewPdfUrl,
@@ -23,6 +24,50 @@ interface CachedCompileResult {
 }
 
 const compiledPreviewCache = new Map<string, CachedCompileResult>();
+
+export async function isRenderablePdfFile(filePath: string) {
+  try {
+    const handle = await fs.open(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(5);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      return bytesRead >= 5 && buffer.toString("latin1", 0, 5) === "%PDF-";
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+export function injectProjectGraphicPaths(tex: string, manifest: ProjectManifest, mainTexPath: string) {
+  const directories = new Set<string>();
+  const mainDirectory = normalizeProjectRelativePath(path.dirname(mainTexPath));
+  if (mainDirectory && mainDirectory !== ".") {
+    directories.add(toLatexDirectory(mainDirectory));
+  }
+
+  for (const file of manifest.files) {
+    if (!isGraphicAsset(file.path)) continue;
+    const directory = normalizeProjectRelativePath(path.dirname(file.path));
+    if (directory && directory !== ".") {
+      directories.add(toLatexDirectory(directory));
+    }
+  }
+
+  if (!directories.size || tex.includes("\\graphicspath")) {
+    return tex;
+  }
+
+  const graphicspath = `\\graphicspath{${Array.from(directories)
+    .map((directory) => `{${directory}}`)
+    .join("")}}`;
+  if (tex.includes("\\usepackage{graphicx}")) {
+    return tex.replace("\\usepackage{graphicx}", `\\usepackage{graphicx}\n${graphicspath}`);
+  }
+
+  return tex.replace("\\begin{document}", `${graphicspath}\n\\begin{document}`);
+}
 
 export async function compileLatexPreview(
   payload: PreviewCompileRequest,
@@ -400,6 +445,14 @@ function createHash(content: Buffer) {
 
 function createCompileCacheKey(projectKey: string, compileMode: string) {
   return `${projectKey}:${compileMode}`;
+}
+
+function isGraphicAsset(filePath: string) {
+  return [".png", ".jpg", ".jpeg", ".webp", ".pdf"].includes(path.extname(filePath).toLowerCase());
+}
+
+function toLatexDirectory(directory: string) {
+  return `${directory.replace(/\\/g, "/").replace(/\/?$/, "/")}`;
 }
 
 async function findLatexOutputPdf(root: string, texPath: string, newerThanMs = 0) {

@@ -1,9 +1,15 @@
 import type { BlockDefinition, BlockInstance } from "@/types/blocks";
+import { lexicalTextDataKey } from "@/types/editor";
 import { escapeLatex } from "@/domain/latex/escapeLatex";
 import { escapeLatexPreservingInlineCommands } from "@/domain/latex/inlineLatex";
+import { lexicalJsonToLatex } from "@/utils/latex/lexicalToLatex";
 
 export function renderBlockToLatex(block: BlockInstance, definition?: BlockDefinition): string {
   if (block.type === "plain-text") {
+    if (block.data[lexicalTextDataKey]?.trim()) {
+      return lexicalJsonToLatex(block.data[lexicalTextDataKey], block.data.text ?? "");
+    }
+
     return escapeLatexPreservingInlineCommands(block.data.text ?? "");
   }
 

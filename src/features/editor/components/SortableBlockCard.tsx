@@ -6,7 +6,9 @@ import { memo, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { SuggestionCarousel } from "@/features/block-suggestions/SuggestionCarousel";
 import { useBlockSuggestions } from "@/features/block-suggestions/hooks/useBlockSuggestions";
+import { LexicalTextEditor } from "@/features/editor/components/LexicalTextEditor";
 import type { BlockInstance } from "@/types/blocks";
+import { lexicalTextDataKey } from "@/types/editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,8 +60,9 @@ export const SortableBlockCard = memo(function SortableBlockCard({
     transform: CSS.Transform.toString(transform),
     transition,
   };
-  const collapsedPreview = Object.values(block.data)
-    .map((value) => value.trim())
+  const collapsedPreview = Object.entries(block.data)
+    .filter(([key]) => key !== lexicalTextDataKey)
+    .map(([, value]) => value.trim())
     .find(Boolean);
 
   useEffect(() => {
@@ -84,8 +87,8 @@ export const SortableBlockCard = memo(function SortableBlockCard({
     }
 
     const animationFrameId = window.requestAnimationFrame(() => {
-      const firstTextField = articleRef.current?.querySelector<HTMLTextAreaElement | HTMLInputElement>(
-        'textarea:not([disabled]), input:not([type="hidden"]):not([disabled])',
+      const firstTextField = articleRef.current?.querySelector<HTMLElement>(
+        'textarea:not([disabled]), input:not([type="hidden"]):not([disabled]), [contenteditable="true"]',
       );
       firstTextField?.focus();
       clearPendingBlockFocus(block.id);
@@ -107,13 +110,43 @@ export const SortableBlockCard = memo(function SortableBlockCard({
         ref={(node) => {
           articleRef.current = node;
         }}
-        initial={pendingFocusBlockId === block.id ? { opacity: 0 } : false}
-        animate={{ opacity: isDragging ? 0.45 : 1 }}
+        initial={
+          pendingFocusBlockId === block.id
+            ? {
+                opacity: 0.82,
+                scaleX: 0.28,
+                scaleY: 0.72,
+                y: -18,
+                borderRadius: 12,
+                transformOrigin: "left center",
+              }
+            : false
+        }
+        animate={{
+          opacity: isDragging ? 0.45 : 1,
+          scaleX: 1,
+          scaleY: 1,
+          y: 0,
+          borderRadius: 24,
+          transformOrigin: "left center",
+        }}
         layoutId={isDragging || isDragCollapseInstant ? undefined : `document-block-${block.id}`}
         layout={isDragCollapseInstant ? false : "position"}
         transition={{
           opacity: {
             duration: 0.18,
+            ease: [0.25, 0.8, 0.25, 1] as const,
+          },
+          scaleX: {
+            duration: 0.28,
+            ease: [0.25, 0.8, 0.25, 1] as const,
+          },
+          scaleY: {
+            duration: 0.28,
+            ease: [0.25, 0.8, 0.25, 1] as const,
+          },
+          y: {
+            duration: 0.24,
             ease: [0.25, 0.8, 0.25, 1] as const,
           },
           layout: {
@@ -217,64 +250,82 @@ export const SortableBlockCard = memo(function SortableBlockCard({
         >
           <div className="min-h-0 overflow-hidden">
             <div className="space-y-3 p-3">
-              {definition?.fields.map((field) => (
-                <label key={field.id} className="block">
-                  <span className="mb-1.5 block text-xs font-semibold uppercase text-[#D1D5DB]">{field.label}</span>
-                  {isImageField(block, field.id) ? (
-                    <div className="flex gap-2">
-                      <Input
+              {definition?.fields.map((field) =>
+                isPlainTextRichTextField(block, field.id) ? (
+                  <div key={field.id} className="block">
+                    <span className="mb-1.5 block text-xs font-semibold uppercase text-[#D1D5DB]">{field.label}</span>
+                    <LexicalTextEditor
+                      value={block.data[field.id] ?? ""}
+                      lexicalJson={block.data[lexicalTextDataKey]}
+                      placeholder={field.placeholder}
+                      onFocus={() => selectBlock(block.id)}
+                      onChange={({ plainText, lexicalJson }) =>
+                        updateBlockData(block.id, {
+                          [field.id]: plainText,
+                          [lexicalTextDataKey]: lexicalJson,
+                        })
+                      }
+                    />
+                  </div>
+                ) : (
+                  <label key={field.id} className="block">
+                    <span className="mb-1.5 block text-xs font-semibold uppercase text-[#D1D5DB]">{field.label}</span>
+                    {isImageField(block, field.id) ? (
+                      <div className="flex gap-2">
+                        <Input
+                          value={block.data[field.id] ?? ""}
+                          placeholder={field.placeholder}
+                          onFocus={() => selectBlock(block.id)}
+                          onDoubleClick={(event) => event.stopPropagation()}
+                          onChange={(event) => updateBlockData(block.id, { [field.id]: event.target.value })}
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          type="button"
+                          aria-label="Anexar imagem"
+                          tabIndex={-1}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            document.getElementById(`image-upload-${block.id}-${field.id}`)?.click();
+                          }}
+                        >
+                          <ImagePlus className="h-4 w-4" />
+                        </Button>
+                        <input
+                          id={`image-upload-${block.id}-${field.id}`}
+                          className="hidden"
+                          type="file"
+                          accept="image/*"
+                          onFocus={() => selectBlock(block.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            const [file] = Array.from(event.target.files ?? []);
+                            if (file) {
+                              void attachImageToBlock(block.id, file).catch((err: unknown) => {
+                                notify({
+                                  kind: "error",
+                                  title: "Falha ao anexar imagem",
+                                  message: err instanceof Error ? err.message : "Nao foi possivel carregar a imagem.",
+                                });
+                              });
+                            }
+                            event.target.value = "";
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <Textarea
                         value={block.data[field.id] ?? ""}
                         placeholder={field.placeholder}
                         onFocus={() => selectBlock(block.id)}
                         onDoubleClick={(event) => event.stopPropagation()}
                         onChange={(event) => updateBlockData(block.id, { [field.id]: event.target.value })}
                       />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        type="button"
-                        aria-label="Anexar imagem"
-                        tabIndex={-1}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          document.getElementById(`image-upload-${block.id}-${field.id}`)?.click();
-                        }}
-                      >
-                        <ImagePlus className="h-4 w-4" />
-                      </Button>
-                      <input
-                        id={`image-upload-${block.id}-${field.id}`}
-                        className="hidden"
-                        type="file"
-                        accept="image/*"
-                        onFocus={() => selectBlock(block.id)}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => {
-                          const [file] = Array.from(event.target.files ?? []);
-                          if (file) {
-                            void attachImageToBlock(block.id, file).catch((err: unknown) => {
-                              notify({
-                                kind: "error",
-                                title: "Falha ao anexar imagem",
-                                message: err instanceof Error ? err.message : "Nao foi possivel carregar a imagem.",
-                              });
-                            });
-                          }
-                          event.target.value = "";
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <Textarea
-                      value={block.data[field.id] ?? ""}
-                      placeholder={field.placeholder}
-                      onFocus={() => selectBlock(block.id)}
-                      onDoubleClick={(event) => event.stopPropagation()}
-                      onChange={(event) => updateBlockData(block.id, { [field.id]: event.target.value })}
-                    />
-                  )}
-                </label>
-              ))}
+                    )}
+                  </label>
+                ),
+              )}
             </div>
           </div>
         </div>
@@ -299,4 +350,8 @@ export const SortableBlockCard = memo(function SortableBlockCard({
 
 function isImageField(block: BlockInstance, fieldId: string) {
   return fieldId === "image" && (block.type === "attached-image" || block.type === "final-image");
+}
+
+function isPlainTextRichTextField(block: BlockInstance, fieldId: string) {
+  return block.type === "plain-text" && fieldId === "text";
 }
